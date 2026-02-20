@@ -1,0 +1,14 @@
+{
+  "name": "proper",
+  "version": "1.0.0",
+  "description": "Online Coding, Quiz & Interview Preparation Platform",
+  "scripts": {
+    "start": "npm run start --prefix server",
+    "dev": "npm run dev --prefix server",
+    "build": "npm run build --prefix server",
+    "postinstall": "npm install --prefix server"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

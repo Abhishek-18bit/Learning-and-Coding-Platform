@@ -1,0 +1,368 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuizSourceType {
+  MANUAL
+  LESSON_AI
+  PDF_AI
+}
+
+enum SubmissionStatus {
+  PENDING
+  ACCEPTED
+  WRONG_ANSWER
+  ERROR
+}
+
+enum BattleRoomStatus {
+  WAITING
+  LIVE
+  ENDED
+}
+
+enum ChatChannelType {
+  COURSE
+  LESSON
+  PROBLEM
+  QUIZ
+  BATTLE
+}
+
+enum ChatMessageType {
+  TEXT
+  CODE
+  SYSTEM
+}
+
+model User {
+  id                String              @id @default(uuid())
+  name              String
+  email             String              @unique
+  password          String
+  role              Role
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  courses           Course[]            @relation("TeacherCourses")
+  enrollments       Enrollment[]
+  submissions       Submission[]        @relation("StudentSubmissions")
+  problemProgress   ProblemProgress[]   @relation("StudentProblemProgress")
+  quizAttempts      QuizAttempt[]
+  interviewProgress InterviewProgress[]
+  notifications     Notification[]
+  activityLogs      ActivityLog[]
+  uploadedMaterials CourseMaterial[]
+  createdProblems   Problem[]            @relation("TeacherCreatedProblems")
+  createdBattleRooms BattleRoom[]        @relation("TeacherBattleRooms")
+  battleParticipants BattleParticipant[]
+  battleSubmissions  BattleSubmission[]
+  createdChatChannels ChatChannel[]      @relation("ChatChannelCreator")
+  chatMessages       ChatMessage[]       @relation("UserChatMessages")
+  chatReadStates     ChatReadState[]     @relation("UserChatReadStates")
+}
+
+model Course {
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+  teacherId   String
+  teacher     User         @relation("TeacherCourses", fields: [teacherId], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  lessons     Lesson[]
+  quizzes     Quiz[]
+  enrollments Enrollment[]
+  materials   CourseMaterial[]
+  chatChannel ChatChannel? @relation("CourseChatChannel")
+}
+
+model CourseMaterial {
+  id         String   @id @default(uuid())
+  title      String
+  fileUrl    String
+  fileType   String
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id])
+  uploadedBy String
+  uploader   User     @relation(fields: [uploadedBy], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Enrollment {
+  id         String   @id @default(uuid())
+  userId     String
+  courseId   String
+  enrolledAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+  course     Course   @relation(fields: [courseId], references: [id])
+
+  @@unique([userId, courseId])
+}
+
+model Lesson {
+  id        String    @id @default(uuid())
+  title     String
+  content   String?
+  courseId  String
+  course    Course    @relation(fields: [courseId], references: [id])
+  createdAt DateTime  @default(now())
+  problems  Problem[]
+  quizzes   Quiz[]
+  chatChannel ChatChannel? @relation("LessonChatChannel")
+}
+
+model Problem {
+  id            String            @id @default(uuid())
+  title         String
+  description   String
+  difficulty    Difficulty
+  inputFormat   String
+  outputFormat  String
+  constraints   String
+  starterCode   String
+  createdById   String
+  createdBy     User              @relation("TeacherCreatedProblems", fields: [createdById], references: [id])
+  lessonId      String?
+  lesson        Lesson?           @relation(fields: [lessonId], references: [id])
+  createdAt     DateTime          @default(now())
+  testCases     TestCase[]
+  submissions   Submission[]
+  progress      ProblemProgress[]
+  battleRooms   BattleRoom[]
+  chatChannel   ChatChannel?      @relation("ProblemChatChannel")
+}
+
+model Submission {
+  id            String           @id @default(uuid())
+  studentId     String
+  problemId     String
+  code          String
+  language      String
+  status        SubmissionStatus
+  executionTime Int?
+  createdAt     DateTime         @default(now())
+  student       User             @relation("StudentSubmissions", fields: [studentId], references: [id])
+  problem       Problem          @relation(fields: [problemId], references: [id])
+}
+
+model TestCase {
+  id             String   @id @default(uuid())
+  problemId      String
+  problem        Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  input          String
+  expectedOutput String
+  isHidden       Boolean  @default(true)
+}
+
+model ProblemProgress {
+  id        String    @id @default(uuid())
+  problemId String
+  studentId String
+  isSolved  Boolean   @default(false)
+  attempts  Int       @default(0)
+  solvedAt  DateTime?
+  problem   Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  student   User      @relation("StudentProblemProgress", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([problemId, studentId])
+}
+
+model Quiz {
+  id          String         @id @default(uuid())
+  title       String
+  courseId    String
+  course      Course         @relation(fields: [courseId], references: [id])
+  lessonId    String?
+  lesson      Lesson?        @relation(fields: [lessonId], references: [id])
+  difficulty  Difficulty     @default(MEDIUM)
+  sourceType  QuizSourceType @default(MANUAL)
+  timeLimit   Int
+  totalMarks  Int
+  createdAt   DateTime       @default(now())
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+  chatChannel ChatChannel?   @relation("QuizChatChannel")
+}
+
+model ChatChannel {
+  id          String          @id @default(uuid())
+  type        ChatChannelType
+  courseId    String?         @unique
+  course      Course?         @relation("CourseChatChannel", fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId    String?         @unique
+  lesson      Lesson?         @relation("LessonChatChannel", fields: [lessonId], references: [id], onDelete: Cascade)
+  problemId   String?         @unique
+  problem     Problem?        @relation("ProblemChatChannel", fields: [problemId], references: [id], onDelete: Cascade)
+  quizId      String?         @unique
+  quiz        Quiz?           @relation("QuizChatChannel", fields: [quizId], references: [id], onDelete: Cascade)
+  battleRoomId String?        @unique
+  battleRoom   BattleRoom?    @relation("BattleRoomChatChannel", fields: [battleRoomId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?           @relation("ChatChannelCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  messages    ChatMessage[]
+  readStates  ChatReadState[]
+
+  @@index([type])
+}
+
+model ChatMessage {
+  id        String          @id @default(uuid())
+  channelId String
+  channel   ChatChannel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User            @relation("UserChatMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  type      ChatMessageType @default(TEXT)
+  content   String
+  metadata  Json?
+  createdAt DateTime        @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+  readStates ChatReadState[] @relation("ReadStateLastMessage")
+
+  @@index([channelId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model ChatReadState {
+  id                String       @id @default(uuid())
+  channelId         String
+  channel           ChatChannel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User         @relation("UserChatReadStates", fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessageId String?
+  lastReadMessage   ChatMessage? @relation("ReadStateLastMessage", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+  lastReadAt        DateTime     @default(now())
+
+  @@unique([channelId, userId])
+  @@index([userId, lastReadAt])
+}
+
+model QuizQuestion {
+  id            String @id @default(uuid())
+  quizId        String
+  quiz          Quiz   @relation(fields: [quizId], references: [id])
+  question      String
+  options       Json
+  correctOption String
+  explanation   String
+  marks         Int
+}
+
+model QuizAttempt {
+  id          String    @id @default(uuid())
+  quizId      String
+  userId      String
+  score       Int?
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  quiz        Quiz      @relation(fields: [quizId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model InterviewQuestion {
+  id        String              @id @default(uuid())
+  title     String
+  content   String?
+  category  String
+  createdAt DateTime            @default(now())
+  progress  InterviewProgress[]
+}
+
+model InterviewProgress {
+  id                  String            @id @default(uuid())
+  userId              String
+  interviewQuestionId String
+  completed           Boolean           @default(false)
+  completedAt         DateTime?
+  user                User              @relation(fields: [userId], references: [id])
+  question            InterviewQuestion @relation(fields: [interviewQuestionId], references: [id])
+
+  @@unique([userId, interviewQuestionId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model BattleRoom {
+  id              String            @id @default(uuid())
+  roomCode        String            @unique
+  problemId       String
+  teacherId       String
+  status          BattleRoomStatus  @default(WAITING)
+  duration        Int
+  startTime       DateTime?
+  endTime         DateTime?
+  maxParticipants Int
+  createdAt       DateTime          @default(now())
+  problem         Problem           @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  teacher         User              @relation("TeacherBattleRooms", fields: [teacherId], references: [id], onDelete: Cascade)
+  participants    BattleParticipant[]
+  submissions     BattleSubmission[]
+  chatChannel     ChatChannel?      @relation("BattleRoomChatChannel")
+
+  @@index([teacherId, status])
+  @@index([problemId])
+}
+
+model BattleParticipant {
+  id          String     @id @default(uuid())
+  roomId       String
+  userId       String
+  joinedAt     DateTime  @default(now())
+  isConnected  Boolean   @default(true)
+  room         BattleRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+}
+
+model BattleSubmission {
+  id             String     @id @default(uuid())
+  roomId          String
+  userId          String
+  attemptNumber   Int
+  isCorrect       Boolean
+  submissionTime  DateTime   @default(now())
+  timeTaken       Int
+  language        String
+  room            BattleRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId, attemptNumber])
+  @@index([roomId, submissionTime])
+  @@index([roomId, isCorrect, timeTaken, attemptNumber])
+}
