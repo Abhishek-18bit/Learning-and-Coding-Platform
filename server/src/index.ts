@@ -22,6 +22,10 @@ import { handleError } from './utils/errors';
 import { initSocket } from './utils/socket';
 import { BattleService } from './services/battle.service';
 
+
+//import { BattleService } from './services/battle.service';
+
+
 const app: Express = express();
 const httpServer = createServer(app);
 
