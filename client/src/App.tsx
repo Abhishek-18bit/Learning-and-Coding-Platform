@@ -1,12 +1,11 @@
 import { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import CursorBall from './components/ui/CursorBall';
 import AmbientParticles from './components/ui/AmbientParticles';
+import AchievementToastCenter from './components/ui/AchievementToastCenter';
 
 const PublicLayout = lazy(() => import('./layouts/PublicLayout'));
 const AppLayout = lazy(() => import('./layouts/AppLayout'));
 const IntroPage = lazy(() => import('./pages/IntroPage'));
-const LandingPage = lazy(() => import('./pages/LandingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const DashboardRouter = lazy(() => import('./pages/DashboardRouter'));
@@ -30,6 +29,8 @@ const TeacherQuizManagePage = lazy(() => import('./pages/TeacherQuizManagePage')
 const SubmissionHistoryPage = lazy(() => import('./pages/SubmissionHistoryPage'));
 const TeacherCourseStudentsPage = lazy(() => import('./pages/TeacherCourseStudentsPage'));
 const ProblemsListPage = lazy(() => import('./pages/ProblemsListPage'));
+const AchievementsPage = lazy(() => import('./pages/AchievementsPage'));
+const AboutPage = lazy(() => import('./pages/AboutPage'));
 const BattleIndexPage = lazy(() => import('./pages/battle/index'));
 const BattleRoomPage = lazy(() => import('./pages/battle/[roomId]'));
 
@@ -43,14 +44,15 @@ function App() {
   return (
     <Router>
       <AmbientParticles />
-      <CursorBall />
+      <AchievementToastCenter />
       <div className="relative z-10">
         <Suspense fallback={<RouteLoadingFallback />}>
           <Routes>
             {/* Public Routes */}
             <Route element={<PublicLayout />}>
-              <Route path="/" element={<IntroPage />} />
-              <Route path="/landing" element={<LandingPage />} />
+              <Route path="/" element={<Navigate to="/intro" replace />} />
+              <Route path="/landing" element={<Navigate to="/intro" replace />} />
+              <Route path="/intro" element={<IntroPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
             </Route>
@@ -66,6 +68,8 @@ function App() {
               <Route path="course/:courseId" element={<CourseDetailPage />} />
               <Route path="problem/:problemId" element={<ProblemSolvePage />} />
               <Route path="quizzes" element={<QuizListPage />} />
+              <Route path="achievements" element={<AchievementsPage />} />
+              <Route path="about" element={<AboutPage />} />
               <Route path="quiz/:quizId" element={<QuizPage />} />
               <Route path="practice" element={<InterviewPrepPage />} />
               <Route path="courses/create" element={<CourseCreatePage />} />

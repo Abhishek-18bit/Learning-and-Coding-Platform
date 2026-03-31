@@ -14,6 +14,7 @@ router.post('/:lessonId/generate-quiz', authenticate, authorize('TEACHER'), vali
 
 // Public/Authenticated: Get lessons by course
 router.get('/course/:courseId', LessonController.getByCourse);
+router.get('/:lessonId', LessonController.getById);
 
 // API Contract: Get problems by lesson
 router.get('/:lessonId/problems', ProblemController.getByLesson);

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -10,17 +10,20 @@ import { battleService } from '../../services/battle.service';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
+import BattleBackground from '../../components/battle/BattleBackground';
 
 const BattleIndexPage = () => {
     const navigate = useNavigate();
     const { user, loading: authLoading } = useAuth();
     const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN';
 
-    const [problemId, setProblemId] = useState('');
-    const [duration, setDuration] = useState<15 | 30 | 60>(30);
+    const [selectedProblemIds, setSelectedProblemIds] = useState<string[]>([]);
+    const [durationInput, setDurationInput] = useState('30');
     const [maxParticipants, setMaxParticipants] = useState(100);
     const [roomCodeInput, setRoomCodeInput] = useState('');
     const [copied, setCopied] = useState(false);
+    const [sessionMismatchNotice, setSessionMismatchNotice] = useState('');
+    const [durationValidationError, setDurationValidationError] = useState('');
 
     const [createdRoom, setCreatedRoom] = useState<{
         id: string;
@@ -34,24 +37,53 @@ const BattleIndexPage = () => {
     });
 
     const createRoomMutation = useMutation({
-        mutationFn: () =>
+        mutationFn: (duration: number) =>
             battleService.createRoom({
-                problemId,
+                problemIds: selectedProblemIds,
                 duration,
                 maxParticipants,
             }),
         onSuccess: (room) => {
             setCreatedRoom({ id: room.id, roomCode: room.roomCode });
             setCopied(false);
+            setSessionMismatchNotice('');
         },
     });
 
     const joinRoomMutation = useMutation({
         mutationFn: (roomCode: string) => battleService.joinRoom(roomCode),
         onSuccess: (room) => {
+            setSessionMismatchNotice('');
             navigate(`/app/battle/${room.id}`);
         },
     });
+
+    const isSessionMismatchIssue = (message?: string, statusCode?: number) => {
+        if (statusCode === 401) {
+            return true;
+        }
+        const normalizedMessage = String(message || '').toLowerCase();
+        return (
+            normalizedMessage.includes('socket identity mismatch') ||
+            normalizedMessage.includes('unauthorized socket request') ||
+            normalizedMessage.includes('invalid token') ||
+            normalizedMessage.includes('jwt')
+        );
+    };
+
+    useEffect(() => {
+        const mutationError = (createRoomMutation.error || joinRoomMutation.error) as
+            | AxiosError<{ message?: string }>
+            | null;
+        const message = mutationError?.response?.data?.message || mutationError?.message || '';
+        const statusCode = mutationError?.response?.status;
+
+        if (isSessionMismatchIssue(message, statusCode)) {
+            setSessionMismatchNotice('Session mismatch detected in this tab. Reload the tab or login again.');
+        } else {
+            setSessionMismatchNotice('');
+        }
+    }, [createRoomMutation.error, joinRoomMutation.error]);
 
     const formError = useMemo(() => {
         const mutationError = (createRoomMutation.error || joinRoomMutation.error) as
@@ -60,13 +92,29 @@ const BattleIndexPage = () => {
         return mutationError?.response?.data?.message || mutationError?.message || '';
     }, [createRoomMutation.error, joinRoomMutation.error]);
 
+    const parsedDuration = Number.parseInt(durationInput, 10);
+    const isDurationValid = Number.isInteger(parsedDuration) && parsedDuration >= 5 && parsedDuration <= 180;
+
+    const toggleProblemSelection = (problemId: string) => {
+        setSelectedProblemIds((current) =>
+            current.includes(problemId)
+                ? current.filter((id) => id !== problemId)
+                : [...current, problemId]
+        );
+    };
+
     const handleCreateRoom = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         createRoomMutation.reset();
-        if (!problemId) {
+        setDurationValidationError('');
+        if (selectedProblemIds.length === 0) {
             return;
         }
-        createRoomMutation.mutate();
+        if (!isDurationValid) {
+            setDurationValidationError('Duration must be between 5 and 180 minutes.');
+            return;
+        }
+        createRoomMutation.mutate(parsedDuration);
     };
 
     const handleJoinRoom = (event: FormEvent<HTMLFormElement>) => {
@@ -88,7 +136,7 @@ const BattleIndexPage = () => {
             await navigator.clipboard.writeText(createdRoom.roomCode);
             setCopied(true);
             window.setTimeout(() => setCopied(false), 1200);
-        } catch (_error) {
+        } catch {
             setCopied(false);
         }
     };
@@ -106,15 +154,31 @@ const BattleIndexPage = () => {
     }
 
     return (
-        <div className="mx-auto max-w-6xl space-y-6">
+        <div className="relative isolate min-h-[calc(100vh-7.5rem)]">
+            <BattleBackground />
+            <div className="relative z-10 mx-auto max-w-6xl space-y-6 pb-6">
             <div className="space-y-2">
                 <h1 className="typ-h1 !mb-0">Competitive Battle Mode</h1>
                 <p className="typ-muted">Real-time coding battles with synced timer and live leaderboard updates.</p>
             </div>
 
-            {formError ? (
+            {durationValidationError || formError ? (
                 <div className="rounded-xl border border-error/35 bg-error/15 px-4 py-3 text-sm font-medium text-error">
-                    {formError}
+                    {durationValidationError || formError}
+                </div>
+            ) : null}
+
+            {sessionMismatchNotice ? (
+                <div className="rounded-xl border border-error/35 bg-error/15 px-4 py-3 text-sm text-error">
+                    <p>{sessionMismatchNotice}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
+                            Reload Tab
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => navigate('/login')}>
+                            Login Again
+                        </Button>
+                    </div>
                 </div>
             ) : null}
 
@@ -132,35 +196,87 @@ const BattleIndexPage = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="label-base">Problem</label>
-                                <select
-                                    value={problemId}
-                                    onChange={(event) => setProblemId(event.target.value)}
-                                    className="input-base"
-                                    disabled={problemsQuery.isLoading || createRoomMutation.isPending}
-                                >
-                                    <option value="">Select problem</option>
-                                    {(problemsQuery.data || []).map((problem) => (
-                                        <option key={problem.id} value={problem.id}>
-                                            {problem.title} ({problem.difficulty})
-                                        </option>
-                                    ))}
-                                </select>
+                                <label className="label-base">Problems</label>
+                                <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-border bg-card/70 p-3">
+                                    {(problemsQuery.data || []).map((problem) => {
+                                        const isSelected = selectedProblemIds.includes(problem.id);
+                                        const selectedOrder = selectedProblemIds.indexOf(problem.id) + 1;
+
+                                        return (
+                                            <button
+                                                key={problem.id}
+                                                type="button"
+                                                onClick={() => toggleProblemSelection(problem.id)}
+                                                className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                                                    isSelected
+                                                        ? 'border-primary-blue/55 bg-primary-blue/20'
+                                                        : 'border-border bg-surface hover:border-primary-blue/45'
+                                                }`}
+                                                disabled={createRoomMutation.isPending}
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p className="font-medium text-gray-700">{problem.title}</p>
+                                                        <p className="text-xs text-muted">{problem.difficulty}</p>
+                                                    </div>
+                                                    {isSelected ? (
+                                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary-blue/25 text-xs font-semibold text-primary-cyan">
+                                                            {selectedOrder}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                    {problemsQuery.isLoading ? (
+                                        <p className="text-sm text-muted">Loading problems...</p>
+                                    ) : null}
+                                    {!problemsQuery.isLoading && (problemsQuery.data || []).length === 0 ? (
+                                        <p className="text-sm text-muted">No problems available.</p>
+                                    ) : null}
+                                </div>
+                                <p className="text-xs text-muted">
+                                    Select one or more problems. Students solve them in sequence.
+                                </p>
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div className="space-y-2">
-                                    <label className="label-base">Duration</label>
-                                    <select
-                                        value={duration}
-                                        onChange={(event) => setDuration(Number(event.target.value) as 15 | 30 | 60)}
+                                    <label className="label-base">Duration (minutes)</label>
+                                    <div className="flex items-center gap-2">
+                                        {[15, 30, 60].map((preset) => (
+                                            <button
+                                                key={preset}
+                                                type="button"
+                                                onClick={() => {
+                                                    setDurationInput(String(preset));
+                                                    setDurationValidationError('');
+                                                }}
+                                                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                                                    durationInput === String(preset)
+                                                        ? 'border-primary-blue/55 bg-primary-blue/20 text-primary-cyan'
+                                                        : 'border-border bg-surface text-muted hover:text-gray-700'
+                                                }`}
+                                                disabled={createRoomMutation.isPending}
+                                            >
+                                                {preset}m
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <input
+                                        type="number"
+                                        min={5}
+                                        max={180}
+                                        step={1}
+                                        value={durationInput}
+                                        onChange={(event) => {
+                                            setDurationInput(event.target.value);
+                                            setDurationValidationError('');
+                                        }}
                                         className="input-base"
                                         disabled={createRoomMutation.isPending}
-                                    >
-                                        <option value={15}>15 minutes</option>
-                                        <option value={30}>30 minutes</option>
-                                        <option value={60}>60 minutes</option>
-                                    </select>
+                                    />
+                                    <p className="text-xs text-muted">Allowed range: 5 to 180 minutes.</p>
                                 </div>
 
                                 <div className="space-y-2">
@@ -182,7 +298,7 @@ const BattleIndexPage = () => {
                                 variant="primary"
                                 className="!from-primary-cyan !via-primary-blue !to-primary-blue"
                                 fullWidth
-                                disabled={!problemId || createRoomMutation.isPending}
+                                disabled={selectedProblemIds.length === 0 || createRoomMutation.isPending || !isDurationValid}
                             >
                                 {createRoomMutation.isPending ? (
                                     <Loader2 size={16} className="animate-spin" />
@@ -269,6 +385,7 @@ const BattleIndexPage = () => {
                     </form>
                 </Card>
             )}
+            </div>
         </div>
     );
 };

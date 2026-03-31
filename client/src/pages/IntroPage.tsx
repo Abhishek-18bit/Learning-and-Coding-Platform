@@ -1,322 +1,476 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ArrowRight, Sparkles } from "lucide-react";
-import { fadeIn, staggerContainer } from "../animations/variants";
-import Button from "../components/ui/Button";
-import Card from "../components/ui/Card";
-import { preloadRoute } from "../utils/routePreload";
+import { useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { motion, useInView } from 'framer-motion';
+import {
+    ArrowRight,
+    BarChart3,
+    BrainCircuit,
+    ChartSpline,
+    Code2,
+    Flame,
+    MessageSquareText,
+    Radar,
+    Sparkles,
+    Swords,
+    Users,
+} from 'lucide-react';
+import Button from '../components/ui/Button';
+import Card from '../components/ui/Card';
+import AnimatedCounter from '../components/AnimatedCounter';
+import { fadeIn, staggerContainer } from '../animations/variants';
 
-const INTRO_NAME = "Abhishek Kumar";
-const INTRO_TAGLINE = "Engineered by";
-const AUTO_REDIRECT_SECONDS = 4;
-const PROFILE_IMAGE_SRC = "/intro-profile.png";
-const AUTO_REDIRECT_STORAGE_KEY = "intro_auto_redirect_disabled";
-const TAGLINE_TYPING_DELAY_MS = 85;
+type FeatureBlock = {
+    title: string;
+    description: string;
+    icon: typeof BrainCircuit;
+};
 
-const IntroPage = () => {
-    const navigate = useNavigate();
-    const [autoRedirectEnabled, setAutoRedirectEnabled] = useState(() => {
-        if (typeof window === "undefined") return true;
-        return window.localStorage.getItem(AUTO_REDIRECT_STORAGE_KEY) !== "1";
-    });
-    const [typedTagline, setTypedTagline] = useState("");
-    const [isTaglineTypingDone, setIsTaglineTypingDone] = useState(false);
-    const [remainingSeconds, setRemainingSeconds] = useState(AUTO_REDIRECT_SECONDS);
-    const [imageLoadFailed, setImageLoadFailed] = useState(false);
+type SocialStat = {
+    title: string;
+    value: number;
+    suffix: string;
+    note: string;
+};
 
-    useEffect(() => {
-        let index = 0;
-        setTypedTagline("");
-        setIsTaglineTypingDone(false);
+const FEATURE_BLOCKS: FeatureBlock[] = [
+    {
+        title: 'AI Code Mentor',
+        description: 'Context-aware coding guidance with explainable hints and adaptive feedback loops.',
+        icon: BrainCircuit,
+    },
+    {
+        title: 'Real-Time Competitive Battles',
+        description: 'Live room coding duels with synchronized timers, rankings, and leaderboard updates.',
+        icon: Swords,
+    },
+    {
+        title: 'Smart Doubt Discussion System',
+        description: 'Fast threaded discussions around lessons, quizzes, battles, and coding problems.',
+        icon: MessageSquareText,
+    },
+    {
+        title: 'Personalized Skill Analytics',
+        description: 'Learning telemetry with strengths, weak zones, and actionable next-step recommendations.',
+        icon: ChartSpline,
+    },
+];
 
-        const timer = window.setInterval(() => {
-            index += 1;
-            setTypedTagline(INTRO_TAGLINE.slice(0, index));
-            if (index >= INTRO_TAGLINE.length) {
-                window.clearInterval(timer);
-                setIsTaglineTypingDone(true);
-            }
-        }, TAGLINE_TYPING_DELAY_MS);
+const SOCIAL_STATS: SocialStat[] = [
+    {
+        title: 'Problems Solved',
+        value: 10,
+        suffix: 'K+',
+        note: 'Across coding practice, quizzes, and battle rounds.',
+    },
+    {
+        title: 'Active Learners',
+        value: 5,
+        suffix: 'K+',
+        note: 'Daily platform participation from students and mentors.',
+    },
+    {
+        title: 'Interview Success',
+        value: 95,
+        suffix: '%',
+        note: 'Learners reporting improved interview outcomes.',
+    },
+    {
+        title: 'AI Mentor Coverage',
+        value: 24,
+        suffix: '/7',
+        note: 'Always-on support and guidance availability.',
+    },
+];
 
-        return () => window.clearInterval(timer);
-    }, []);
-
-    useEffect(() => {
-        if (!autoRedirectEnabled) return;
-        if (remainingSeconds <= 0) {
-            navigate("/login", { replace: true });
-            return;
-        }
-
-        const countdownTimer = window.setTimeout(() => {
-            setRemainingSeconds((prev) => Math.max(0, prev - 1));
-        }, 1000);
-        return () => window.clearTimeout(countdownTimer);
-    }, [autoRedirectEnabled, navigate, remainingSeconds]);
-
-    const handleToggleAutoRedirect = () => {
-        const next = !autoRedirectEnabled;
-        setAutoRedirectEnabled(next);
-        if (next) {
-            setRemainingSeconds(AUTO_REDIRECT_SECONDS);
-            window.localStorage.removeItem(AUTO_REDIRECT_STORAGE_KEY);
-        } else {
-            window.localStorage.setItem(AUTO_REDIRECT_STORAGE_KEY, "1");
-        }
-    };
+const AnimatedStatCard = ({ title, value, suffix, note }: SocialStat) => {
+    const statRef = useRef<HTMLDivElement | null>(null);
+    const inView = useInView(statRef, { once: true, amount: 0.4 });
 
     return (
-        <div className="relative min-h-[calc(100vh-10rem)] overflow-hidden px-4 py-8 sm:px-6 lg:px-10">
+        <motion.div ref={statRef} variants={fadeIn}>
+            <Card variant="glass" hoverLift className="h-full border-border/80 bg-card/60 p-5 backdrop-blur-xl">
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted">{title}</p>
+                <p className="mt-2 text-3xl font-bold leading-tight text-gray-900">
+                    {inView ? <AnimatedCounter from={0} to={value} duration={1.6} suffix={suffix} /> : `0${suffix}`}
+                </p>
+                <p className="mt-2 text-sm text-muted">{note}</p>
+            </Card>
+        </motion.div>
+    );
+};
+
+const IntroPage = () => {
+    return (
+        <div className="relative overflow-hidden pb-20">
+            <div className="pointer-events-none absolute inset-0 -z-20 intro-mesh-background" />
             <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-                <div className="absolute -left-24 top-6 h-80 w-80 rounded-full bg-primary-cyan/20 blur-3xl" />
-                <div className="absolute right-[-8rem] top-1/3 h-[28rem] w-[28rem] rounded-full bg-primary-violet/20 blur-3xl" />
-                <div className="absolute bottom-[-10rem] left-1/3 h-[28rem] w-[28rem] rounded-full bg-primary-blue/15 blur-3xl" />
+                <span className="intro-floating-particle intro-particle-1" />
+                <span className="intro-floating-particle intro-particle-2" />
+                <span className="intro-floating-particle intro-particle-3" />
+                <span className="intro-floating-particle intro-particle-4" />
+                <span className="intro-floating-particle intro-particle-5" />
+                <span className="intro-floating-particle intro-particle-6" />
+                <span className="intro-floating-particle intro-particle-7" />
             </div>
 
-            <div className="mx-auto mb-4 flex max-w-7xl items-center justify-end">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onMouseEnter={() => preloadRoute("/login")}
-                    onFocus={() => preloadRoute("/login")}
-                    onClick={() => navigate("/login", { replace: true })}
-                >
-                    Skip Intro <ArrowRight size={14} />
-                </Button>
-            </div>
-
-            <motion.div
+            <motion.section
                 initial="hidden"
                 animate="visible"
                 variants={staggerContainer}
-                className="mx-auto grid max-w-7xl grid-cols-1 gap-6 lg:grid-cols-[1.1fr_1fr]"
+                className="mx-auto mt-6 max-w-[1400px] px-4 md:mt-8 md:px-6"
             >
-                <motion.section variants={fadeIn}>
-                    <Card variant="glass" className="h-full space-y-8">
-                        <div className="space-y-5">
-                            <p className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary-cyan">
-                                <Sparkles size={14} />
-                                Welcome
-                            </p>
+                <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+                    <motion.div variants={fadeIn} className="space-y-6">
+                        <span className="inline-flex items-center gap-2 rounded-full border border-primary-cyan/35 bg-primary-cyan/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-primary-cyan">
+                            <Sparkles size={12} />
+                            AI Learning Command Center
+                        </span>
 
-                            <h1 className="typ-h1 !mb-0 !text-5xl xl:!text-6xl">
-                                <span className={`intro-typewriter-text ${isTaglineTypingDone ? "intro-typewriter-glow" : ""}`}>
-                                    {typedTagline}
-                                </span>
-                                <span
-                                    className={`intro-typewriter-cursor ${
-                                        isTaglineTypingDone ? "intro-typewriter-cursor-done" : ""
-                                    }`}
-                                    aria-hidden="true"
-                                >
-                                    |
-                                </span>
+                        <div className="space-y-4">
+                            <h1 className="text-4xl font-bold leading-tight tracking-tight text-gray-900 md:text-6xl">
+                                Learn. Code. Compete.
+                                <br />
+                                <span className="intro-gradient-text">Master.</span>
                             </h1>
-                            <motion.h2
-                                initial={{ opacity: 0, y: 10, clipPath: "inset(0 100% 0 0)" }}
-                                animate={{ opacity: 1, y: 0, clipPath: "inset(0 0% 0 0)" }}
-                                transition={{ duration: 0.55, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                                className="intro-name-cinematic -mt-2 inline-block text-4xl font-extrabold tracking-tight sm:text-5xl xl:text-6xl"
-                            >
-                                {INTRO_NAME}
-                            </motion.h2>
-                            <div className="-mt-2 w-full max-w-[22rem] sm:max-w-[26rem]">
-                                <motion.div
-                                    initial={{ scaleX: 0, opacity: 0 }}
-                                    animate={{ scaleX: 1, opacity: 1 }}
-                                    transition={{ duration: 0.45, delay: 0.5, ease: "easeInOut" }}
-                                    className="intro-name-underline origin-left"
-                                />
-                            </div>
-
-                            <p className="typ-body max-w-2xl">
-                                A premium E-learning coding platform for quizzes, coding challenges, and AI-powered
-                                learning workflows. Built to feel fast, modern, and serious.
+                            <p className="max-w-2xl text-lg leading-8 text-muted">
+                                A premium AI-powered ecosystem for coding practice, adaptive learning, live battles,
+                                and continuous performance growth for both students and teachers.
                             </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                            <div className="rounded-xl border border-border bg-surface/70 p-4">
-                                <p className="text-xs font-bold uppercase tracking-wider text-muted">Quizzes</p>
-                                <p className="mt-1 text-sm font-semibold text-gray-700">Manual + AI from lesson/PDF</p>
-                            </div>
-                            <div className="rounded-xl border border-border bg-surface/70 p-4">
-                                <p className="text-xs font-bold uppercase tracking-wider text-muted">Coding Arena</p>
-                                <p className="mt-1 text-sm font-semibold text-gray-700">LeetCode-style submissions</p>
-                            </div>
-                            <div className="rounded-xl border border-border bg-surface/70 p-4">
-                                <p className="text-xs font-bold uppercase tracking-wider text-muted">Tracking</p>
-                                <p className="mt-1 text-sm font-semibold text-gray-700">Progress + attempt analytics</p>
-                            </div>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3">
-                            <Link
-                                to="/login"
-                                onMouseEnter={() => preloadRoute("/login")}
-                                onFocus={() => preloadRoute("/login")}
-                            >
-                                <Button size="lg">
-                                    Enter Platform <ArrowRight size={16} />
+                            <Link to="/register">
+                                <Button
+                                    variant="primary"
+                                    size="lg"
+                                    className="!from-primary-cyan !via-primary-blue !to-success"
+                                >
+                                    Get Started
+                                    <ArrowRight size={16} />
                                 </Button>
                             </Link>
-                            <Link
-                                to="/landing"
-                                onMouseEnter={() => preloadRoute("/landing")}
-                                onFocus={() => preloadRoute("/landing")}
-                            >
-                                <Button variant="secondary" size="lg">
+
+                            <a href="#features">
+                                <Button variant="secondary" size="lg" className="border-border bg-surface-elevated">
                                     Explore Features
                                 </Button>
-                            </Link>
+                            </a>
                         </div>
+                    </motion.div>
 
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                                    Auto Enter
-                                </p>
-                                <button
-                                    type="button"
-                                    onClick={handleToggleAutoRedirect}
-                                    className={`relative h-7 w-14 rounded-full border transition-all ${
-                                        autoRedirectEnabled
-                                            ? "border-primary-blue/60 bg-primary-blue/20"
-                                            : "border-border bg-surface"
-                                    }`}
-                                    aria-label="Toggle auto redirect"
-                                >
-                                    <span
-                                        className={`absolute top-1 h-5 w-5 rounded-full bg-gray-900 transition-all ${
-                                            autoRedirectEnabled ? "left-8" : "left-1"
-                                        }`}
-                                    />
-                                </button>
+                    <motion.div variants={fadeIn} className="relative min-h-[380px] lg:min-h-[460px]">
+                        <div
+                            className="intro-hero-glow-panel relative h-full rounded-2xl border border-border/80 bg-card/55 p-4 shadow-strong backdrop-blur-2xl md:p-5"
+                        >
+                            <div className="flex items-center justify-between rounded-xl border border-border/70 bg-surface/70 px-4 py-3">
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Live Mission Feed</p>
+                                <span className="inline-flex items-center gap-2 text-xs font-semibold text-success">
+                                    <span className="intro-status-pulse" />
+                                    Online
+                                </span>
                             </div>
-                            {autoRedirectEnabled ? (
-                                <>
-                                    <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted">
-                                        <span>Redirecting</span>
-                                        <span>{remainingSeconds}s</span>
-                                    </div>
-                                    <div className="h-2 overflow-hidden rounded-full border border-border bg-surface">
-                                        <motion.div
-                                            className="h-full bg-gradient-to-r from-primary-cyan via-primary-blue to-primary-violet"
-                                            initial={false}
-                                            animate={{
-                                                width: `${Math.max(
-                                                    0,
-                                                    (remainingSeconds / AUTO_REDIRECT_SECONDS) * 100
-                                                )}%`,
-                                            }}
-                                            transition={{ duration: 0.22, ease: "easeInOut" }}
-                                        />
-                                    </div>
-                                </>
-                            ) : (
-                                <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                                    Auto-redirect disabled. Stay on intro until you click.
-                                </p>
-                            )}
+
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                                <Card variant="glass" className="border-border/70 bg-surface/65 p-4" tilt={false}>
+                                    <p className="text-xs font-semibold text-muted">Learner Progress</p>
+                                    <p className="mt-1 text-2xl font-bold text-gray-900">
+                                        <AnimatedCounter from={0} to={87} duration={1.8} suffix="%" />
+                                    </p>
+                                    <p className="mt-1 text-xs text-success">+12% this week</p>
+                                </Card>
+
+                                <Card variant="glass" className="border-border/70 bg-surface/65 p-4" tilt={false}>
+                                    <p className="text-xs font-semibold text-muted">Battle Queue</p>
+                                    <p className="mt-1 text-2xl font-bold text-gray-900">
+                                        <AnimatedCounter from={0} to={42} duration={1.8} suffix=" Live" />
+                                    </p>
+                                    <p className="mt-1 text-xs text-primary-cyan">Realtime synced</p>
+                                </Card>
+                            </div>
+
+                            <Card variant="glass" className="mt-3 border-border/70 bg-surface/65 p-4" tilt={false}>
+                                <div className="flex items-center justify-between text-xs font-semibold text-muted">
+                                    <span>AI Mentor Response</span>
+                                    <span>128ms</span>
+                                </div>
+                                <div className="mt-3 h-2 rounded-full bg-surface-elevated">
+                                    <motion.div
+                                        className="h-2 rounded-full bg-gradient-to-r from-primary-cyan via-primary-blue to-success"
+                                        initial={{ width: '20%' }}
+                                        animate={{ width: ['24%', '68%', '54%', '86%'] }}
+                                        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+                                    />
+                                </div>
+                            </Card>
                         </div>
-                    </Card>
-                </motion.section>
 
-                <motion.section variants={fadeIn}>
-                    <Card variant="layered" className="relative h-full overflow-hidden p-0">
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.25),transparent_45%)]" />
+                        <motion.div
+                            className="absolute -left-4 top-8 rounded-xl border border-border/75 bg-surface/75 px-4 py-3 text-xs font-semibold text-gray-700 shadow-soft backdrop-blur-xl"
+                            animate={{ y: [0, -8, 0] }}
+                            transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut' }}
+                        >
+                            <span className="inline-flex items-center gap-2">
+                                <Flame size={14} className="text-success" />
+                                12-day coding streak
+                            </span>
+                        </motion.div>
 
-                        <div className="relative h-full min-h-[28rem] p-5">
-                            <div className="absolute inset-x-0 top-0 h-[72%] bg-gradient-to-b from-primary-blue/15 via-surface to-surface-elevated" />
+                        <motion.div
+                            className="absolute -right-3 bottom-10 rounded-xl border border-border/75 bg-surface/75 px-4 py-3 text-xs font-semibold text-gray-700 shadow-soft backdrop-blur-xl"
+                            animate={{ y: [0, 10, 0] }}
+                            transition={{ duration: 4.6, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+                        >
+                            <span className="inline-flex items-center gap-2">
+                                <Users size={14} className="text-primary-cyan" />
+                                128 learners active now
+                            </span>
+                        </motion.div>
+                    </motion.div>
+                </div>
+            </motion.section>
 
-                            <div className="relative z-10 mx-auto mt-2 w-full max-w-md">
-                                <div className="relative mx-auto w-full max-w-[23rem]">
+            <motion.section
+                id="features"
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, amount: 0.2 }}
+                variants={staggerContainer}
+                className="mx-auto mt-8 max-w-[1400px] px-4 md:px-6"
+            >
+                <motion.div variants={fadeIn} className="space-y-6">
+                    <div className="space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-cyan">Feature Showcase</p>
+                        <h2 className="text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
+                            Built for Modern AI Learning Workflows
+                        </h2>
+                        <p className="max-w-3xl text-sm leading-7 text-muted md:text-base">
+                            Designed with clear system feedback, real-time collaboration, and high-signal learner analytics.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        {FEATURE_BLOCKS.map((feature, index) => {
+                            const Icon = feature.icon;
+                            return (
+                                <motion.div
+                                    key={feature.title}
+                                    initial={{ opacity: 0, y: 18 }}
+                                    whileInView={{ opacity: 1, y: 0 }}
+                                    viewport={{ once: true, amount: 0.35 }}
+                                    transition={{ duration: 0.26, delay: index * 0.07, ease: [0.22, 1, 0.36, 1] }}
+                                >
+                                    <Card
+                                        variant="glass"
+                                        hoverLift
+                                        className="h-full border-border/80 bg-card/60 p-5 backdrop-blur-xl"
+                                    >
+                                        <motion.span
+                                            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-primary-blue/35 bg-primary-blue/18 text-primary-cyan"
+                                            animate={{ y: [0, -3, 0] }}
+                                            transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: index * 0.15 }}
+                                        >
+                                            <Icon size={20} />
+                                        </motion.span>
+
+                                        <h3 className="mt-4 text-xl font-bold text-gray-900">{feature.title}</h3>
+                                        <p className="mt-2 text-sm leading-7 text-muted">{feature.description}</p>
+                                    </Card>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                </motion.div>
+            </motion.section>
+
+            <motion.section
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, amount: 0.2 }}
+                variants={staggerContainer}
+                className="mx-auto mt-8 max-w-[1400px] px-4 md:px-6"
+            >
+                <motion.div variants={fadeIn} className="space-y-6">
+                    <div className="space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-cyan">Live Product Preview</p>
+                        <h2 className="text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
+                            Realtime UI Signals That Feel Alive
+                        </h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                        <Card variant="glass" className="border-border/80 bg-card/60 p-5 backdrop-blur-xl" hoverLift>
+                            <div className="mb-3 flex items-center justify-between">
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Animated Leaderboard</p>
+                                <span className="inline-flex items-center gap-2 text-xs font-semibold text-success">
+                                    <span className="intro-status-pulse" />
+                                    Updating
+                                </span>
+                            </div>
+                            <div className="space-y-2">
+                                {[
+                                    { rank: 1, user: 'Aarav', score: 1280, trend: '+42' },
+                                    { rank: 2, user: 'Mira', score: 1195, trend: '+35' },
+                                    { rank: 3, user: 'Ishan', score: 1132, trend: '+28' },
+                                ].map((row, index) => (
                                     <motion.div
-                                        className="absolute inset-[-12px] rounded-[2.2rem] bg-gradient-to-br from-primary-cyan/30 via-primary-blue/20 to-primary-violet/30 blur-xl"
-                                        animate={{ opacity: [0.6, 1, 0.6] }}
-                                        transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
-                                    />
+                                        key={row.rank}
+                                        className="grid grid-cols-[2.1rem_1fr_auto_auto] items-center gap-3 rounded-lg border border-border/70 bg-surface/70 px-3 py-2"
+                                        animate={{ y: [0, index === 0 ? -2 : 0, 0] }}
+                                        transition={{ duration: 2.6, repeat: Infinity, delay: index * 0.25, ease: 'easeInOut' }}
+                                    >
+                                        <span className="text-sm font-bold text-primary-cyan">#{row.rank}</span>
+                                        <span className="text-sm font-semibold text-gray-900">{row.user}</span>
+                                        <span className="text-sm font-semibold text-gray-700">{row.score}</span>
+                                        <span className="text-xs font-semibold text-success">{row.trend}</span>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </Card>
 
-                                    <motion.div
-                                        className="absolute inset-[-2px] rounded-[2rem] border border-primary-cyan/45"
-                                        animate={{ rotate: [0, 360] }}
-                                        transition={{ duration: 16, repeat: Infinity, ease: "linear" }}
+                        <Card variant="glass" className="border-border/80 bg-card/60 p-5 backdrop-blur-xl" hoverLift>
+                            <div className="mb-3 flex items-center justify-between">
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Skill Radar</p>
+                                <Radar size={16} className="text-primary-cyan" />
+                            </div>
+                            <div className="relative flex items-center justify-center py-2">
+                                <motion.svg
+                                    viewBox="0 0 220 220"
+                                    className="h-52 w-52"
+                                    animate={{ rotate: [0, 4, 0] }}
+                                    transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+                                >
+                                    <circle cx="110" cy="110" r="82" fill="none" stroke="rgba(51,65,85,0.9)" strokeWidth="1" />
+                                    <circle cx="110" cy="110" r="58" fill="none" stroke="rgba(51,65,85,0.8)" strokeWidth="1" />
+                                    <circle cx="110" cy="110" r="34" fill="none" stroke="rgba(51,65,85,0.8)" strokeWidth="1" />
+                                    <polygon
+                                        points="110,28 168,82 149,170 71,170 52,82"
+                                        fill="rgba(168,85,247,0.08)"
+                                        stroke="rgba(168,85,247,0.85)"
+                                        strokeWidth="2"
                                     />
+                                    <motion.path
+                                        d="M30 154 C72 130, 108 144, 146 110 C165 92, 182 78, 194 62"
+                                        fill="none"
+                                        stroke="rgba(34,211,238,0.9)"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        className="intro-chart-line"
+                                    />
+                                </motion.svg>
+                            </div>
+                        </Card>
 
-                                    <div className="relative overflow-hidden rounded-[2rem] border border-border bg-surface-elevated shadow-strong">
-                                        {!imageLoadFailed ? (
-                                            <motion.img
-                                                src={PROFILE_IMAGE_SRC}
-                                                alt={`${INTRO_NAME} portrait`}
-                                                className="h-[24rem] w-full object-cover object-[center_18%] sm:h-[26rem] lg:h-[28rem]"
-                                                loading="eager"
-                                                initial={{ scale: 1.04 }}
-                                                animate={{ scale: 1.08 }}
-                                                transition={{ duration: 8, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
-                                                onError={() => setImageLoadFailed(true)}
+                        <Card variant="glass" className="border-border/80 bg-card/60 p-5 backdrop-blur-xl" hoverLift>
+                            <div className="mb-3 flex items-center justify-between">
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Code Editor Preview</p>
+                                <Code2 size={16} className="text-primary-cyan" />
+                            </div>
+                            <div className="rounded-xl border border-border/70 bg-surface/70 p-3 font-code text-sm">
+                                <p className="text-muted">// AI mentor suggestion</p>
+                                <p className="text-gray-700">function solve(input) {'{'}</p>
+                                <p className="pl-4 text-primary-cyan">const values = input.split(' ');</p>
+                                <p className="pl-4 text-success">return values.reduce((a, b) =&gt; a + Number(b), 0);</p>
+                                <p className="text-gray-700">{'}'}</p>
+                            </div>
+                            <div className="mt-3 flex items-center justify-between text-xs text-muted">
+                                <span className="inline-flex items-center gap-2">
+                                    <span className="intro-status-pulse" />
+                                    Runtime: 42ms
+                                </span>
+                                <span>Verdict: ACCEPTED</span>
+                            </div>
+                        </Card>
+
+                        <Card variant="glass" className="border-border/80 bg-card/60 p-5 backdrop-blur-xl" hoverLift>
+                            <div className="mb-3 flex items-center justify-between">
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Progress Analytics</p>
+                                <BarChart3 size={16} className="text-primary-cyan" />
+                            </div>
+                            <div className="space-y-3">
+                                {[
+                                    { label: 'Problem Solving', width: '82%' },
+                                    { label: 'Quiz Accuracy', width: '74%' },
+                                    { label: 'Battle Ranking', width: '67%' },
+                                ].map((item, index) => (
+                                    <div key={item.label}>
+                                        <div className="mb-1 flex items-center justify-between text-xs text-muted">
+                                            <span>{item.label}</span>
+                                            <span>{item.width}</span>
+                                        </div>
+                                        <div className="h-2 rounded-full bg-surface-elevated">
+                                            <motion.div
+                                                className="h-2 rounded-full bg-gradient-to-r from-primary-cyan via-primary-blue to-success"
+                                                initial={{ width: '0%' }}
+                                                whileInView={{ width: item.width }}
+                                                viewport={{ once: true }}
+                                                transition={{ duration: 0.8, delay: index * 0.08, ease: 'easeInOut' }}
                                             />
-                                        ) : (
-                                            <div className="flex h-[24rem] w-full items-center justify-center bg-gradient-to-br from-primary-blue/30 via-surface to-primary-violet/25 sm:h-[26rem] lg:h-[28rem]">
-                                                <span className="text-6xl font-extrabold text-gray-900">
-                                                    {INTRO_NAME
-                                                        .split(" ")
-                                                        .map((part) => part[0])
-                                                        .slice(0, 2)
-                                                        .join("")}
-                                                </span>
-                                            </div>
-                                        )}
-
-                                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-card via-card/60 to-transparent p-5">
-                                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary-cyan">
-                                                Creator
-                                            </p>
-                                            <p className="mt-1 text-xl font-bold text-gray-900">{INTRO_NAME}</p>
-                                            <p className="text-sm font-medium text-muted">AI + Coding Education Platform</p>
                                         </div>
                                     </div>
-                                </div>
+                                ))}
                             </div>
+                        </Card>
+                    </div>
+                </motion.div>
+            </motion.section>
 
-                            <div className="intro-skyline absolute bottom-32 left-0 h-36 w-[200%] opacity-70" />
-                            <div className="absolute bottom-24 left-0 h-24 w-full bg-surface-elevated" />
-                            <div className="absolute bottom-24 left-0 h-1 w-full bg-primary-blue/30" />
-                            <div className="intro-road-dash absolute bottom-[7.25rem] left-0 h-1 w-full" />
+            <motion.section
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, amount: 0.3 }}
+                variants={staggerContainer}
+                className="mx-auto mt-8 max-w-[1400px] px-4 md:px-6"
+            >
+                <motion.div variants={fadeIn} className="space-y-5">
+                    <div className="space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-cyan">Social Proof</p>
+                        <h2 className="text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
+                            Trusted by a Growing Learning Community
+                        </h2>
+                    </div>
 
-                            <motion.div
-                                className="absolute bottom-24 left-[-9rem]"
-                                animate={{ x: ["0%", "160%"] }}
-                                transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                    <motion.div variants={staggerContainer} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        {SOCIAL_STATS.map((stat) => (
+                            <AnimatedStatCard key={stat.title} {...stat} />
+                        ))}
+                    </motion.div>
+                </motion.div>
+            </motion.section>
+
+            <motion.section
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.35 }}
+                transition={{ duration: 0.28, ease: 'easeInOut' }}
+                className="mx-auto mt-10 max-w-[1200px] px-4 md:px-6"
+            >
+                <div className="rounded-2xl border border-border/80 bg-card/65 px-6 py-10 text-center shadow-strong backdrop-blur-2xl md:px-10">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-cyan">Final CTA</p>
+                    <h2 className="mt-2 text-4xl font-bold leading-tight tracking-tight text-gray-900 md:text-5xl">
+                        <span className="intro-gradient-text">Build Smarter. Learn Faster.</span>
+                    </h2>
+                    <div className="intro-glow-underline mx-auto mt-4" />
+                    <p className="mx-auto mt-4 max-w-2xl text-base leading-8 text-muted">
+                        Start your AI-powered coding and learning journey with modern workflows designed for real outcomes.
+                    </p>
+                    <div className="mt-7">
+                        <Link to="/register">
+                            <Button
+                                variant="primary"
+                                size="lg"
+                                className="intro-cta-pulse !from-primary-cyan !via-primary-blue !to-success"
                             >
-                                <div className="intro-car-float relative h-20 w-44">
-                                    <div className="absolute bottom-5 left-0 h-10 w-full rounded-2xl border border-border bg-gradient-to-r from-primary-cyan/70 via-primary-blue/70 to-primary-violet/70 shadow-medium" />
-                                    <div className="absolute bottom-12 left-8 h-7 w-20 rounded-t-2xl border border-border bg-surface-elevated/90" />
-                                    <div className="absolute bottom-14 left-11 h-4 w-8 rounded bg-card/80" />
-                                    <div className="absolute bottom-14 left-[4.1rem] h-4 w-8 rounded bg-card/80" />
-                                    <div className="absolute bottom-7 right-[-0.25rem] h-2.5 w-4 rounded-r bg-warning/80" />
-
-                                    <div className="intro-wheel absolute bottom-0 left-6 h-8 w-8 rounded-full border-4 border-gray-800 bg-gray-500" />
-                                    <div className="intro-wheel absolute bottom-0 right-6 h-8 w-8 rounded-full border-4 border-gray-800 bg-gray-500" />
-                                </div>
-                            </motion.div>
-
-                            <div className="absolute inset-x-0 bottom-0 p-5">
-                                <div className="rounded-xl border border-border bg-card/70 px-4 py-3 backdrop-blur">
-                                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-cyan">
-                                        Live Intro Scene
-                                    </p>
-                                    <p className="mt-1 text-sm font-medium text-gray-700">
-                                        Your portrait + live motion layer tuned to your platform identity.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-                </motion.section>
-            </motion.div>
+                                Get Started
+                                <ArrowRight size={16} />
+                            </Button>
+                        </Link>
+                    </div>
+                </div>
+            </motion.section>
         </div>
     );
 };
 
 export default IntroPage;
+
+

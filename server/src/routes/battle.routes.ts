@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { BattleController } from '../controllers/battle.controller';
 import { authenticate, authorize } from '../middlewares/auth.middleware';
 import { validateBody } from '../middlewares/validate.middleware';
-import { createBattleRoomSchema, joinBattleRoomSchema } from '../validations/battle.validation';
+import { createBattleRoomSchema, endBattleRoomSchema, joinBattleRoomSchema } from '../validations/battle.validation';
 
 const router = Router();
 
@@ -25,6 +25,7 @@ router.post(
     '/end/:roomId',
     authenticate,
     authorize('TEACHER', 'ADMIN'),
+    validateBody(endBattleRoomSchema),
     BattleController.endRoom
 );
 

@@ -4,7 +4,7 @@ import { authenticate, authorize } from '../middlewares/auth.middleware';
 import { validateBody } from '../middlewares/validate.middleware';
 import { createProblemSchema } from '../validations/problem.validation';
 import { addTestCasesSchema } from '../validations/problem.validation';
-import { submitCodeByProblemSchema } from '../validations/submission.validation';
+import { runCustomCodeByProblemSchema, submitCodeByProblemSchema } from '../validations/submission.validation';
 
 const router = Router();
 
@@ -18,5 +18,6 @@ router.get('/:id', authenticate, ProblemController.getById);
 
 // Student Submission API
 router.post('/:id/submit', authenticate, authorize('STUDENT'), validateBody(submitCodeByProblemSchema), ProblemController.submit);
+router.post('/:id/run-custom', authenticate, validateBody(runCustomCodeByProblemSchema), ProblemController.runCustom);
 
 export default router;

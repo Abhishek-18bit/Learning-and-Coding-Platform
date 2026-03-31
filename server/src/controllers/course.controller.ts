@@ -59,6 +59,96 @@ export class CourseController {
         }
     }
 
+    static async getUnits(req: Request, res: Response, next: NextFunction) {
+        try {
+            const courseId = req.params.courseId as string;
+            const units = await CourseService.getUnitsByCourse(courseId);
+
+            res.status(200).json({
+                success: true,
+                units,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async createUnit(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) {
+                throw new ApiError(401, 'Unauthorized');
+            }
+
+            const courseId = req.params.courseId as string;
+            const unit = await CourseService.createUnit(courseId, req.user.id, req.user.role, req.body);
+
+            res.status(201).json({
+                success: true,
+                message: 'Course unit created successfully',
+                unit,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async createTopic(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) {
+                throw new ApiError(401, 'Unauthorized');
+            }
+
+            const courseId = req.params.courseId as string;
+            const unitId = req.params.unitId as string;
+            const topic = await CourseService.createTopic(courseId, unitId, req.user.id, req.user.role, req.body);
+
+            res.status(201).json({
+                success: true,
+                message: 'Course topic created successfully',
+                topic,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async reorderUnits(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) {
+                throw new ApiError(401, 'Unauthorized');
+            }
+
+            const courseId = req.params.courseId as string;
+            await CourseService.reorderUnits(courseId, req.user.id, req.user.role, req.body.unitIds);
+
+            res.status(200).json({
+                success: true,
+                message: 'Course units reordered successfully',
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async reorderTopics(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) {
+                throw new ApiError(401, 'Unauthorized');
+            }
+
+            const courseId = req.params.courseId as string;
+            const unitId = req.params.unitId as string;
+            await CourseService.reorderTopics(courseId, unitId, req.user.id, req.user.role, req.body.topicIds);
+
+            res.status(200).json({
+                success: true,
+                message: 'Course topics reordered successfully',
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async enroll(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             if (!req.user) {
@@ -112,6 +202,24 @@ export class CourseController {
             res.status(200).json({
                 success: true,
                 students,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async delete(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) {
+                throw new ApiError(401, 'Unauthorized');
+            }
+
+            const courseId = req.params.courseId as string;
+            await CourseService.deleteById(courseId, req.user.id, req.user.role);
+
+            res.status(200).json({
+                success: true,
+                message: 'Course deleted successfully',
             });
         } catch (error) {
             next(error);

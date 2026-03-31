@@ -20,6 +20,7 @@ export interface Quiz {
     title: string;
     difficulty?: Difficulty;
     sourceType?: QuizSourceType;
+    deadline?: string | null;
     timeLimit: number;
     totalMarks: number;
     createdAt: string;
@@ -51,6 +52,7 @@ export interface CreateQuizPayload {
     courseId: string;
     lessonId?: string;
     difficulty: Difficulty;
+    deadline?: string;
     questions: CreateQuizQuestionPayload[];
 }
 
@@ -59,6 +61,7 @@ export interface LegacyCreateQuizPayload {
     courseId: string;
     timeLimit: number;
     totalMarks: number;
+    deadline?: string;
 }
 
 export const quizService = {
@@ -94,5 +97,12 @@ export const quizService = {
 
     remove: async (quizId: string) => {
         await api.delete(`/quizzes/${quizId}`);
+    },
+
+    updateDeadline: async (quizId: string, deadline: string | null) => {
+        const response = await api.patch<{ success: boolean; quiz: Quiz }>(`/quizzes/${quizId}/deadline`, {
+            deadline,
+        });
+        return response.data.quiz;
     },
 };

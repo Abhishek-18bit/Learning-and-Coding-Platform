@@ -20,6 +20,7 @@ type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 export interface GenerateFromPdfPayload {
     difficulty: Difficulty;
     questionCount: number;
+    deadline?: string;
 }
 
 export const materialService = {

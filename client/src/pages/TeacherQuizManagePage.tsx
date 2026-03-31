@@ -1,6 +1,7 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+import { ArrowLeft, CalendarDays, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { quizService } from '../services/quiz.service';
 
@@ -9,6 +10,7 @@ const TeacherQuizManagePage = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { user, loading } = useAuth();
+    const [deadlineLocal, setDeadlineLocal] = useState('');
 
     const query = useQuery({
         queryKey: ['quiz-manage', quizId],
@@ -28,6 +30,38 @@ const TeacherQuizManagePage = () => {
             window.alert(message);
         },
     });
+
+    const updateDeadlineMutation = useMutation({
+        mutationFn: (deadlineIso: string | null) => quizService.updateDeadline(quizId!, deadlineIso),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['quiz-manage', quizId] });
+            queryClient.invalidateQueries({ queryKey: ['quizzes'] });
+        },
+        onError: (error: any) => {
+            const message = error?.response?.data?.message || 'Failed to update deadline.';
+            window.alert(message);
+        },
+    });
+
+    useEffect(() => {
+        if (!query.data?.deadline) {
+            setDeadlineLocal('');
+            return;
+        }
+        const parsed = new Date(query.data.deadline);
+        if (Number.isNaN(parsed.getTime())) {
+            setDeadlineLocal('');
+            return;
+        }
+        setDeadlineLocal(parsed.toISOString().slice(0, 16));
+    }, [query.data?.deadline]);
+
+    const deadlineLabel = useMemo(() => {
+        if (!query.data?.deadline) {
+            return 'No deadline';
+        }
+        return new Date(query.data.deadline).toLocaleString();
+    }, [query.data?.deadline]);
 
     if (loading) {
         return (
@@ -89,6 +123,10 @@ const TeacherQuizManagePage = () => {
                             <Clock size={12} />
                             {quiz.timeLimit} mins
                         </span>
+                        <span className="px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 font-semibold inline-flex items-center gap-1">
+                            <CalendarDays size={12} />
+                            {deadlineLabel}
+                        </span>
                     </div>
                 </div>
 
@@ -114,6 +152,60 @@ const TeacherQuizManagePage = () => {
                     {deleteMutation.isPending ? 'Deleting...' : 'Delete Quiz'}
                 </button>
             </div>
+
+            <section className="bg-white rounded-2xl border border-gray-100 shadow-soft p-5 space-y-4">
+                <div className="space-y-1">
+                    <h2 className="text-lg font-bold text-gray-900">Quiz Deadline</h2>
+                    <p className="text-sm text-secondary">
+                        Set an optional cutoff for student attempts. After deadline, new attempts and submissions are blocked.
+                    </p>
+                </div>
+                <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                    <div className="w-full md:max-w-xs">
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Deadline</label>
+                        <input
+                            type="datetime-local"
+                            value={deadlineLocal}
+                            onChange={(event) => setDeadlineLocal(event.target.value)}
+                            min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                            className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            disabled={updateDeadlineMutation.isPending}
+                        />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (!deadlineLocal) {
+                                    window.alert('Please pick a deadline date/time first.');
+                                    return;
+                                }
+                                const parsed = new Date(deadlineLocal);
+                                if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+                                    window.alert('Deadline must be a valid future date/time.');
+                                    return;
+                                }
+                                updateDeadlineMutation.mutate(parsed.toISOString());
+                            }}
+                            disabled={updateDeadlineMutation.isPending}
+                            className="px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold text-xs uppercase tracking-widest hover:bg-primary/15 transition-colors disabled:opacity-60"
+                        >
+                            {updateDeadlineMutation.isPending ? 'Saving...' : 'Save Deadline'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setDeadlineLocal('');
+                                updateDeadlineMutation.mutate(null);
+                            }}
+                            disabled={updateDeadlineMutation.isPending}
+                            className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 font-bold text-xs uppercase tracking-widest hover:bg-gray-200 transition-colors disabled:opacity-60"
+                        >
+                            Clear Deadline
+                        </button>
+                    </div>
+                </div>
+            </section>
 
             <div className="space-y-4">
                 {questions.map((question, index) => {

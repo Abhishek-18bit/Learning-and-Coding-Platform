@@ -39,7 +39,7 @@ const QuizCreatePage = () => {
             <div className="flex items-center gap-4">
                 <button
                     onClick={() => navigate(-1)}
-                    className="p-3 bg-white rounded-2xl shadow-soft hover:bg-gray-50 transition-all text-secondary"
+                    className="p-3 bg-gray-50 rounded-2xl shadow-soft hover:bg-gray-100 transition-all text-secondary"
                 >
                     <ChevronLeft size={24} />
                 </button>
@@ -59,7 +59,7 @@ const QuizCreatePage = () => {
                                 placeholder="e.g. Mid-Term Proficiency Quiz"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
-                                className="w-full px-6 py-4 bg-gray-50 border-2 border-transparent focus:border-primary/20 focus:bg-white rounded-2xl outline-none transition-all font-bold text-xl"
+                                className="w-full px-6 py-4 bg-gray-50 border-2 border-transparent focus:border-primary/20 focus:bg-gray-50 rounded-2xl outline-none transition-all font-bold text-xl text-gray-900 placeholder:text-muted"
                                 required
                             />
                         </div>

@@ -172,4 +172,29 @@ export class ProblemController {
             next(error);
         }
     }
+
+    static async runCustom(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) throw new ApiError(401, 'Unauthorized');
+
+            const problemId = req.params.id as string;
+            const { code, language, input, expectedOutput } = req.body;
+
+            const result = await SubmissionService.runCustomInput({
+                problemId,
+                code,
+                language,
+                input,
+                expectedOutput,
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'Custom testcase executed',
+                result,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }

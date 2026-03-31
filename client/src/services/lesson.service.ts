@@ -6,6 +6,7 @@ export interface Lesson {
     title: string;
     content: string;
     courseId: string;
+    unitId?: string | null;
     createdAt: string;
 }
 
@@ -14,6 +15,7 @@ type Difficulty = 'EASY' | 'MEDIUM' | 'HARD';
 export interface GenerateLessonQuizPayload {
     difficulty: Difficulty;
     questionCount: number;
+    deadline?: string;
 }
 
 export const lessonService = {
@@ -25,7 +27,17 @@ export const lessonService = {
         const response = await api.get<{ success: boolean; lessons: Lesson[] }>(`/lessons/course/${courseId}`);
         return response.data.lessons;
     },
-    create: async (data: { title: string; content: string; courseId: string }) => {
+    create: async (data: {
+        title: string;
+        content: string;
+        courseId: string;
+        unitId?: string;
+        topicId?: string;
+        unitTitle?: string;
+        topicTitle?: string;
+        topicOrder?: number;
+        estimatedMinutes?: number;
+    }) => {
         const response = await api.post<{ success: boolean; lesson: Lesson }>(`/lessons`, data);
         return response.data.lesson;
     },

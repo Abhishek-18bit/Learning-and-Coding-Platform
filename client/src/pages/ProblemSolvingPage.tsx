@@ -1,20 +1,57 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
-import Editor from '@monaco-editor/react';
+import Editor, { type OnMount } from '@monaco-editor/react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, Clock3, Loader2, Play, Send, Terminal } from 'lucide-react';
+import {
+    AlertTriangle,
+    Clock3,
+    FlaskConical,
+    ListChecks,
+    Loader2,
+    MessageSquareText,
+    Play,
+    Send,
+    Terminal,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { type SubmitSummary, problemService } from '../services/problem.service';
+import { type CustomRunResult, type SubmitSummary, problemService } from '../services/problem.service';
 import Card from '../components/ui/Card';
 import ProblemLayout from '../components/problem/ProblemLayout';
 import SubmissionFeedback from '../components/problem/SubmissionFeedback';
+import TestcasePlayground, { type TestcaseHistoryItem } from '../components/problem/TestcasePlayground';
 import ContextChatPanel from '../components/chat/ContextChatPanel';
 
-const SUPPORTED_RUN_LANGUAGES = new Set(['javascript', 'js']);
+const SUPPORTED_RUN_LANGUAGES = new Set(['javascript', 'js', 'cpp', 'c++']);
 
 type ProblemTab = 'description' | 'formats' | 'examples';
+type WorkspaceDockTab = 'testcases' | 'results' | 'discussion';
+type SupportedEditorLanguage = 'javascript' | 'cpp';
+
+const resolveEditorLanguage = (value: string): SupportedEditorLanguage => {
+    const normalized = String(value || '').toLowerCase().trim();
+    return normalized === 'cpp' || normalized === 'c++' ? 'cpp' : 'javascript';
+};
+
+const LANGUAGE_CONFIG: Record<
+    SupportedEditorLanguage,
+    { label: string; monaco: 'javascript' | 'cpp'; fileName: string; defaultCode: string }
+> = {
+    javascript: {
+        label: 'JavaScript',
+        monaco: 'javascript',
+        fileName: 'main.js',
+        defaultCode: 'function solve(input) {\n  // Write your code here\n  return input;\n}',
+    },
+    cpp: {
+        label: 'C++',
+        monaco: 'cpp',
+        fileName: 'main.cpp',
+        defaultCode:
+            '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    // Write your code here\n\n    return 0;\n}\n',
+    },
+};
 
 const ProblemSolvingPage = () => {
     const { problemId } = useParams<{ problemId: string }>();
@@ -22,13 +59,33 @@ const ProblemSolvingPage = () => {
     const queryClient = useQueryClient();
     const { user } = useAuth();
 
-    const [language, setLanguage] = useState('javascript');
-    const [code, setCode] = useState('function solve(input) {\n  // Start coding here\n  return input;\n}');
-    const [hasEditedCode, setHasEditedCode] = useState(false);
+    const [language, setLanguage] = useState<SupportedEditorLanguage>('javascript');
+    const [codeByLanguage, setCodeByLanguage] = useState<Record<SupportedEditorLanguage, string>>({
+        javascript: LANGUAGE_CONFIG.javascript.defaultCode,
+        cpp: LANGUAGE_CONFIG.cpp.defaultCode,
+    });
+    const [hasEditedCodeByLanguage, setHasEditedCodeByLanguage] = useState<
+        Record<SupportedEditorLanguage, boolean>
+    >({
+        javascript: false,
+        cpp: false,
+    });
     const [lastSummary, setLastSummary] = useState<SubmitSummary | null>(null);
     const [lastAction, setLastAction] = useState<'run' | 'submit' | null>(null);
     const [executionError, setExecutionError] = useState('');
     const [activeTab, setActiveTab] = useState<ProblemTab>('description');
+    const [customInput, setCustomInput] = useState('');
+    const [customExpectedOutput, setCustomExpectedOutput] = useState('');
+    const [customRunResult, setCustomRunResult] = useState<CustomRunResult | null>(null);
+    const [customRunError, setCustomRunError] = useState('');
+    const [customRunHistory, setCustomRunHistory] = useState<TestcaseHistoryItem[]>([]);
+    const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+    const [activeDockTab, setActiveDockTab] = useState<WorkspaceDockTab>('testcases');
+    const customCaseCounterRef = useRef(0);
+    const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+    const editorContainerRef = useRef<HTMLDivElement | null>(null);
+    const [editorReady, setEditorReady] = useState(false);
+    const [fallbackEditorEnabled, setFallbackEditorEnabled] = useState(false);
 
     const { data: problem, isLoading, isError } = useQuery({
         queryKey: ['problem', problemId],
@@ -36,11 +93,133 @@ const ProblemSolvingPage = () => {
         enabled: Boolean(problemId),
     });
 
-    useEffect(() => {
-        if (problem?.starterCode && !hasEditedCode) {
-            setCode(problem.starterCode);
+    const activeLanguageConfig = LANGUAGE_CONFIG[language];
+    const code = codeByLanguage[language];
+
+    const getDefaultCodeForLanguage = (targetLanguage: SupportedEditorLanguage) => {
+        if (targetLanguage === 'javascript' && problem?.starterCode?.trim()) {
+            return problem.starterCode;
         }
-    }, [problem?.starterCode, hasEditedCode]);
+        return LANGUAGE_CONFIG[targetLanguage].defaultCode;
+    };
+
+    useEffect(() => {
+        setLanguage('javascript');
+        setCodeByLanguage({
+            javascript: problem?.starterCode?.trim()
+                ? problem.starterCode
+                : LANGUAGE_CONFIG.javascript.defaultCode,
+            cpp: LANGUAGE_CONFIG.cpp.defaultCode,
+        });
+        setHasEditedCodeByLanguage({
+            javascript: false,
+            cpp: false,
+        });
+    }, [problemId]);
+
+    useEffect(() => {
+        if (!problem?.starterCode?.trim() || hasEditedCodeByLanguage.javascript) {
+            return;
+        }
+
+        setCodeByLanguage((current) => ({
+            ...current,
+            javascript: problem.starterCode,
+        }));
+    }, [problem?.starterCode, hasEditedCodeByLanguage.javascript]);
+
+    useEffect(() => {
+        setCodeByLanguage((current) => {
+            const currentCode = current[language];
+            if (typeof currentCode === 'string' && currentCode.length > 0) {
+                return current;
+            }
+            if (hasEditedCodeByLanguage[language]) {
+                return current;
+            }
+
+            return {
+                ...current,
+                [language]: getDefaultCodeForLanguage(language),
+            };
+        });
+    }, [language, hasEditedCodeByLanguage, problem?.starterCode]);
+
+    useEffect(() => {
+        if (editorReady) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setFallbackEditorEnabled(true);
+        }, 6000);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [editorReady]);
+
+    useEffect(() => {
+        if (!editorContainerRef.current) {
+            return;
+        }
+
+        const observer = new ResizeObserver(() => {
+            editorRef.current?.layout();
+        });
+
+        observer.observe(editorContainerRef.current);
+        return () => observer.disconnect();
+    }, []);
+
+    const handleEditorWheelCapture = (event: ReactWheelEvent<HTMLDivElement>) => {
+        if (!editorRef.current || !editorReady || showFallbackEditor) {
+            return;
+        }
+
+        const editor = editorRef.current;
+        const horizontalDelta = event.shiftKey ? event.deltaY : event.deltaX;
+
+        if (Math.abs(horizontalDelta) > Math.abs(event.deltaY)) {
+            editor.setScrollLeft(editor.getScrollLeft() + horizontalDelta);
+        } else {
+            editor.setScrollTop(editor.getScrollTop() + event.deltaY);
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    useEffect(() => {
+        if (!editorRef.current) {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            editorRef.current?.layout();
+            editorRef.current?.setScrollTop(0);
+            editorRef.current?.setScrollLeft(0);
+            editorRef.current?.focus();
+        });
+    }, [language]);
+
+    const handleEditorMount: OnMount = (editorInstance) => {
+        editorRef.current = editorInstance;
+        setEditorReady(true);
+        setFallbackEditorEnabled(false);
+
+        window.requestAnimationFrame(() => {
+            const currentValue = editorInstance.getValue();
+            if (!currentValue.trim()) {
+                const fallbackCode = code || getDefaultCodeForLanguage(language);
+                editorInstance.setValue(fallbackCode);
+                setCodeByLanguage((current) => ({
+                    ...current,
+                    [language]: fallbackCode,
+                }));
+            }
+            editorInstance.layout();
+            editorInstance.focus();
+        });
+    };
 
     const executeMutation = useMutation({
         mutationFn: (_action: 'run' | 'submit') => problemService.submitByProblemId(problemId!, language, code),
@@ -48,6 +227,7 @@ const ProblemSolvingPage = () => {
             setLastSummary(result.summary);
             setLastAction(action);
             setExecutionError('');
+            setActiveDockTab('results');
             if (action === 'submit') {
                 queryClient.invalidateQueries({ queryKey: ['my-submissions'] });
                 queryClient.invalidateQueries({ queryKey: ['student-dashboard'] });
@@ -56,6 +236,41 @@ const ProblemSolvingPage = () => {
         onError: (error) => {
             const axiosError = error as AxiosError<{ message?: string }>;
             setExecutionError(axiosError.response?.data?.message || 'Execution failed. Please try again.');
+            setActiveDockTab('results');
+        },
+    });
+
+    const runCustomMutation = useMutation({
+        mutationFn: () =>
+            problemService.runCustomByProblemId(
+                problemId!,
+                language,
+                code,
+                customInput,
+                customExpectedOutput.trim() ? customExpectedOutput : undefined
+            ),
+        onSuccess: (result) => {
+            setCustomRunResult(result);
+            setCustomRunError('');
+            setActiveDockTab('testcases');
+
+            customCaseCounterRef.current += 1;
+            const nextEntry: TestcaseHistoryItem = {
+                id: `case-${Date.now()}-${customCaseCounterRef.current}`,
+                label: `Case ${customCaseCounterRef.current}`,
+                input: customInput,
+                expectedOutput: customExpectedOutput,
+                result,
+                createdAt: new Date().toISOString(),
+            };
+
+            setCustomRunHistory((prev) => [nextEntry, ...prev].slice(0, 12));
+            setSelectedHistoryId(nextEntry.id);
+        },
+        onError: (error) => {
+            const axiosError = error as AxiosError<{ message?: string }>;
+            setCustomRunError(axiosError.response?.data?.message || 'Custom execution failed.');
+            setActiveDockTab('testcases');
         },
     });
 
@@ -64,8 +279,23 @@ const ProblemSolvingPage = () => {
         [problem?.testCases]
     );
 
+    useEffect(() => {
+        if (!visibleExamples.length || customInput.trim()) {
+            return;
+        }
+        setCustomInput(visibleExamples[0].input);
+        setCustomExpectedOutput(visibleExamples[0].expectedOutput || '');
+    }, [customInput, visibleExamples]);
+
     const canSubmit = user?.role === 'STUDENT';
     const isExecuting = executeMutation.isPending;
+    const showFallbackEditor = fallbackEditorEnabled && !editorReady;
+    const codeLineCount = useMemo(() => code.split('\n').length, [code]);
+    const codeCharCount = code.length;
+
+    const handleLanguageChange = (nextValue: string) => {
+        setLanguage(resolveEditorLanguage(nextValue));
+    };
 
     const onExecute = (action: 'run' | 'submit') => {
         setExecutionError('');
@@ -73,7 +303,7 @@ const ProblemSolvingPage = () => {
 
         if (!problemId) return;
         if (!SUPPORTED_RUN_LANGUAGES.has(language.toLowerCase())) {
-            setExecutionError('Currently only JavaScript execution is available. Please select JavaScript.');
+            setExecutionError('Supported languages: JavaScript and C++.');
             return;
         }
         if (!code.trim()) {
@@ -86,6 +316,42 @@ const ProblemSolvingPage = () => {
         }
 
         executeMutation.mutate(action);
+    };
+
+    const onRunCustom = () => {
+        setCustomRunError('');
+        setCustomRunResult(null);
+
+        if (!problemId) return;
+        if (!SUPPORTED_RUN_LANGUAGES.has(language.toLowerCase())) {
+            setCustomRunError('Supported languages: JavaScript and C++.');
+            return;
+        }
+        if (!code.trim()) {
+            setCustomRunError('Code cannot be empty.');
+            return;
+        }
+        if (!customInput.trim()) {
+            setCustomRunError('Input is required for custom run.');
+            return;
+        }
+
+        runCustomMutation.mutate();
+    };
+
+    const onSelectHistory = (id: string) => {
+        setSelectedHistoryId(id);
+    };
+
+    const onLoadHistory = (id: string) => {
+        const entry = customRunHistory.find((item) => item.id === id);
+        if (!entry) {
+            return;
+        }
+        setSelectedHistoryId(id);
+        setCustomInput(entry.input);
+        setCustomExpectedOutput(entry.expectedOutput);
+        setCustomRunResult(entry.result);
     };
 
     if (isLoading) {
@@ -116,6 +382,27 @@ const ProblemSolvingPage = () => {
         { key: 'examples', label: 'Examples' },
     ];
 
+    const dockTabs = [
+        {
+            key: 'testcases' as const,
+            label: 'Testcases',
+            icon: FlaskConical,
+            badge: customRunHistory.length > 0 ? String(customRunHistory.length) : null,
+        },
+        {
+            key: 'results' as const,
+            label: 'Results',
+            icon: ListChecks,
+            badge: lastSummary || executionError ? 'LIVE' : null,
+        },
+        {
+            key: 'discussion' as const,
+            label: 'Discussion',
+            icon: MessageSquareText,
+            badge: null,
+        },
+    ];
+
     return (
         <ProblemLayout
             title={problem.title}
@@ -130,6 +417,42 @@ const ProblemSolvingPage = () => {
             tabs={tabs}
             activeTab={activeTab}
             onTabChange={(tab) => setActiveTab(tab as ProblemTab)}
+            descriptionToolbar={
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {dockTabs.map((tabItem) => {
+                        const Icon = tabItem.icon;
+                        const isActive = activeDockTab === tabItem.key;
+
+                        return (
+                            <button
+                                key={tabItem.key}
+                                type="button"
+                                onClick={() => setActiveDockTab(tabItem.key)}
+                                title={tabItem.label}
+                                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.01em] transition ${
+                                    isActive
+                                        ? 'border-primary-blue/55 bg-primary-blue/20 text-primary-cyan'
+                                        : 'border-border bg-surface text-muted hover:text-gray-700'
+                                }`}
+                            >
+                                <Icon size={12} />
+                                {tabItem.label}
+                                {tabItem.badge ? (
+                                    <span
+                                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                                            isActive
+                                                ? 'bg-primary-cyan/15 text-primary-cyan'
+                                                : 'bg-card text-muted'
+                                        }`}
+                                    >
+                                        {tabItem.badge}
+                                    </span>
+                                ) : null}
+                            </button>
+                        );
+                    })}
+                </div>
+            }
             descriptionContent={
                 <AnimatePresence mode="wait">
                     <motion.article
@@ -210,22 +533,35 @@ const ProblemSolvingPage = () => {
                 </AnimatePresence>
             }
             editorContent={
-                <Card variant="layered" className="!p-0 min-h-0 overflow-hidden flex flex-col">
-                    <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
-                        <div className="inline-flex items-center gap-2 text-xs text-muted font-semibold uppercase tracking-wider">
+                <Card variant="layered" tilt={false} className="!p-0 h-full min-h-0 overflow-hidden flex flex-col">
+                    <div className="border-b border-border bg-surface/65 px-4 py-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5">
+                                <span className="rounded-md border border-primary-blue/45 bg-primary-blue/10 px-2.5 py-1 text-xs font-semibold text-primary-cyan">
+                                    {activeLanguageConfig.fileName}
+                                </span>
+                                <span className="mission-chip !px-2.5 !py-1 !text-[11px]">
+                                    {canSubmit ? 'Submission enabled' : 'Preview mode'}
+                                </span>
+                            </div>
+                            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">{problem.difficulty} challenge</span>
+                        </div>
+                    </div>
+
+                    <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3 bg-card/75">
+                        <div className="mission-panel-title">
                             <Terminal size={14} />
-                            Editor
+                            Editor Controls
                         </div>
                         <div className="flex items-center gap-2">
                             <select
                                 value={language}
-                                onChange={(event) => setLanguage(event.target.value)}
+                                onChange={(event) => handleLanguageChange(event.target.value)}
                                 className="rounded-lg border border-border px-3 py-2 text-sm bg-surface text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-blue/30"
                                 disabled={isExecuting}
                             >
                                 <option value="javascript">JavaScript</option>
-                                <option value="typescript">TypeScript</option>
-                                <option value="python">Python</option>
+                                <option value="cpp">C++</option>
                             </select>
                             <button
                                 type="button"
@@ -256,44 +592,140 @@ const ProblemSolvingPage = () => {
                         </div>
                     </div>
 
-                    <div className="min-h-[22rem] flex-1 bg-background">
-                        <Editor
-                            height="100%"
-                            language={
-                                language === 'typescript'
-                                    ? 'typescript'
-                                    : language === 'python'
-                                    ? 'python'
-                                    : 'javascript'
-                            }
-                            value={code}
-                            onChange={(nextValue) => {
-                                setCode(nextValue || '');
-                                setHasEditedCode(true);
-                            }}
-                            theme="vs-dark"
-                            options={{
-                                minimap: { enabled: false },
-                                fontFamily: 'Fira Code, monospace',
-                                fontSize: 14,
-                                lineNumbers: 'on',
-                                automaticLayout: true,
-                                scrollBeyondLastLine: false,
-                                padding: { top: 12, bottom: 12 },
-                            }}
-                        />
+                    <div
+                        ref={editorContainerRef}
+                        onWheelCapture={handleEditorWheelCapture}
+                        className="relative min-h-[20rem] h-full flex-1 overflow-hidden bg-background"
+                    >
+                        {!showFallbackEditor ? (
+                            <Editor
+                                key={`problem-editor-${problemId}-${language}`}
+                                height="100%"
+                                path={activeLanguageConfig.fileName}
+                                language={activeLanguageConfig.monaco}
+                                value={code}
+                                onMount={handleEditorMount}
+                                onChange={(nextValue) => {
+                                    if (typeof nextValue !== 'string') {
+                                        return;
+                                    }
+                                    setCodeByLanguage((current) => ({
+                                        ...current,
+                                        [language]: nextValue,
+                                    }));
+                                    setHasEditedCodeByLanguage((current) => ({
+                                        ...current,
+                                        [language]: true,
+                                    }));
+                                }}
+                                loading={
+                                    <div className="flex h-full items-center justify-center text-sm text-muted">
+                                        Loading editor...
+                                    </div>
+                                }
+                                theme="vs-dark"
+                                options={{
+                                    minimap: { enabled: false },
+                                    fontFamily: 'JetBrains Mono, Fira Code, monospace',
+                                    fontSize: 14,
+                                    lineNumbers: 'on',
+                                    automaticLayout: true,
+                                    scrollBeyondLastLine: false,
+                                    scrollbar: {
+                                        vertical: 'auto',
+                                        horizontal: 'auto',
+                                        verticalScrollbarSize: 10,
+                                        horizontalScrollbarSize: 10,
+                                        alwaysConsumeMouseWheel: true,
+                                        handleMouseWheel: true,
+                                        useShadows: false,
+                                    },
+                                    mouseWheelScrollSensitivity: 1,
+                                    fastScrollSensitivity: 5,
+                                    scrollPredominantAxis: false,
+                                    overviewRulerLanes: 0,
+                                    wordWrap: 'off',
+                                    renderLineHighlight: 'all',
+                                    smoothScrolling: true,
+                                    cursorBlinking: 'expand',
+                                    padding: { top: 12, bottom: 16 },
+                                }}
+                            />
+                        ) : (
+                            <textarea
+                                value={code}
+                                onChange={(event) => {
+                                    setCodeByLanguage((current) => ({
+                                        ...current,
+                                        [language]: event.target.value,
+                                    }));
+                                    setHasEditedCodeByLanguage((current) => ({
+                                        ...current,
+                                        [language]: true,
+                                    }));
+                                }}
+                                className="absolute inset-0 h-full w-full resize-none overflow-auto border-0 bg-background p-4 font-code text-sm leading-6 text-gray-100 focus:outline-none"
+                                spellCheck={false}
+                            />
+                        )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between border-t border-border bg-surface/65 px-4 py-2 text-xs text-muted">
+                        <div className="flex items-center gap-2">
+                            <span className="rounded-md border border-border bg-card px-2 py-1 font-semibold text-gray-700">
+                                {language.toUpperCase()}
+                            </span>
+                            <span>{codeLineCount} lines</span>
+                            <span>{codeCharCount} chars</span>
+                            {showFallbackEditor ? (
+                                <span className="rounded-md border border-warning/35 bg-warning/15 px-2 py-1 text-warning">
+                                    Fallback editor
+                                </span>
+                            ) : null}
+                        </div>
+                        <span>Autosave in session memory</span>
                     </div>
                 </Card>
             }
             feedbackContent={
-                <div className="space-y-4">
-                    <SubmissionFeedback canSubmit={canSubmit} executionError={executionError} summary={lastSummary} />
-                    <ContextChatPanel
-                        contextType="PROBLEM"
-                        contextId={problem.id}
-                        title="Problem Chat"
-                        subtitle="Share hints and discuss strategy."
-                    />
+                <div className="h-full min-h-0 flex flex-col gap-3">
+                    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                        {activeDockTab === 'testcases' ? (
+                            <TestcasePlayground
+                                input={customInput}
+                                expectedOutput={customExpectedOutput}
+                                examples={visibleExamples}
+                                isRunning={runCustomMutation.isPending}
+                                result={customRunResult}
+                                history={customRunHistory}
+                                selectedHistoryId={selectedHistoryId}
+                                error={customRunError}
+                                onInputChange={setCustomInput}
+                                onExpectedOutputChange={setCustomExpectedOutput}
+                                onSelectHistory={onSelectHistory}
+                                onLoadHistory={onLoadHistory}
+                                onRun={onRunCustom}
+                            />
+                        ) : null}
+
+                        {activeDockTab === 'results' ? (
+                            <SubmissionFeedback
+                                canSubmit={canSubmit}
+                                executionError={executionError}
+                                summary={lastSummary}
+                            />
+                        ) : null}
+
+                        {activeDockTab === 'discussion' ? (
+                            <ContextChatPanel
+                                contextType="PROBLEM"
+                                contextId={problem.id}
+                                title="Problem Chat"
+                                subtitle="Share hints and discuss strategy."
+                                className="min-h-[420px]"
+                            />
+                        ) : null}
+                    </div>
                 </div>
             }
         />

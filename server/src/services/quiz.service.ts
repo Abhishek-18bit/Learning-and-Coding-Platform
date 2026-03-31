@@ -16,10 +16,32 @@ interface CreateManualQuizInput {
     courseId?: string;
     lessonId?: string;
     difficulty: Difficulty;
+    deadline?: string;
     questions: CreateQuizQuestionInput[];
 }
 
 export class QuizService {
+    private static parseDeadline(deadline: string | Date | null | undefined): Date | null {
+        if (!deadline) {
+            return null;
+        }
+
+        const parsed = deadline instanceof Date ? deadline : new Date(deadline);
+        if (Number.isNaN(parsed.getTime())) {
+            throw new ApiError(400, 'Invalid deadline value');
+        }
+
+        return parsed;
+    }
+
+    private static ensureFutureDeadline(deadline: Date | null) {
+        if (!deadline) return;
+
+        if (deadline.getTime() <= Date.now()) {
+            throw new ApiError(400, 'Deadline must be in the future');
+        }
+    }
+
     private static ensureGeneratedQuestions(questions: Array<{
         question: string;
         options: Record<string, string>;
@@ -46,6 +68,8 @@ export class QuizService {
         return prisma.$transaction(async (tx) => {
             let courseId: string;
             let lessonId: string | null = null;
+            const deadline = this.parseDeadline(data.deadline);
+            this.ensureFutureDeadline(deadline);
 
             if (data.lessonId) {
                 const lesson = await tx.lesson.findUnique({
@@ -102,6 +126,7 @@ export class QuizService {
                     title: data.title,
                     courseId,
                     lessonId,
+                    deadline,
                     difficulty: data.difficulty,
                     sourceType: 'MANUAL',
                     timeLimit,
@@ -141,6 +166,7 @@ export class QuizService {
         courseId: string;
         lessonId: string;
         difficulty: Difficulty;
+        deadline?: string;
         timeLimit: number;
         totalMarks: number;
         questions: Array<{
@@ -152,6 +178,8 @@ export class QuizService {
         }>;
     }): Promise<Quiz & { questions: QuizQuestion[] }> {
         this.ensureGeneratedQuestions(data.questions);
+        const deadline = this.parseDeadline(data.deadline);
+        this.ensureFutureDeadline(deadline);
 
         return prisma.$transaction(async (tx) => {
             return tx.quiz.create({
@@ -159,6 +187,7 @@ export class QuizService {
                     title: data.title,
                     courseId: data.courseId,
                     lessonId: data.lessonId,
+                    deadline,
                     difficulty: data.difficulty,
                     sourceType: 'LESSON_AI',
                     timeLimit: data.timeLimit,
@@ -184,6 +213,7 @@ export class QuizService {
         title: string;
         courseId: string;
         difficulty: Difficulty;
+        deadline?: string;
         timeLimit: number;
         totalMarks: number;
         questions: Array<{
@@ -195,12 +225,15 @@ export class QuizService {
         }>;
     }): Promise<Quiz & { questions: QuizQuestion[] }> {
         this.ensureGeneratedQuestions(data.questions);
+        const deadline = this.parseDeadline(data.deadline);
+        this.ensureFutureDeadline(deadline);
 
         return prisma.$transaction(async (tx) => {
             return tx.quiz.create({
                 data: {
                     title: data.title,
                     courseId: data.courseId,
+                    deadline,
                     difficulty: data.difficulty,
                     sourceType: 'PDF_AI',
                     timeLimit: data.timeLimit,
@@ -251,6 +284,19 @@ export class QuizService {
     }
 
     static async createAttempt(data: { userId: string; quizId: string }): Promise<QuizAttempt> {
+        const quiz = await prisma.quiz.findUnique({
+            where: { id: data.quizId },
+            select: { id: true, deadline: true },
+        });
+
+        if (!quiz) {
+            throw new ApiError(404, 'Quiz not found');
+        }
+
+        if (quiz.deadline && quiz.deadline.getTime() <= Date.now()) {
+            throw new ApiError(400, 'Quiz deadline has passed. Attempts are closed.');
+        }
+
         return prisma.quizAttempt.create({
             data: {
                 userId: data.userId,
@@ -259,7 +305,37 @@ export class QuizService {
         });
     }
 
-    static async submitAttempt(attemptId: string, score: number): Promise<QuizAttempt> {
+    static async submitAttempt(attemptId: string, userId: string, score: number): Promise<QuizAttempt> {
+        const attempt = await prisma.quizAttempt.findUnique({
+            where: { id: attemptId },
+            select: {
+                id: true,
+                userId: true,
+                submittedAt: true,
+                quiz: {
+                    select: {
+                        deadline: true,
+                    },
+                },
+            },
+        });
+
+        if (!attempt) {
+            throw new ApiError(404, 'Quiz attempt not found');
+        }
+
+        if (attempt.userId !== userId) {
+            throw new ApiError(403, 'Forbidden: You can only submit your own attempt');
+        }
+
+        if (attempt.submittedAt) {
+            throw new ApiError(400, 'Quiz attempt has already been submitted');
+        }
+
+        if (attempt.quiz?.deadline && new Date(attempt.quiz.deadline).getTime() <= Date.now()) {
+            throw new ApiError(400, 'Quiz deadline has passed. Submission is closed.');
+        }
+
         return prisma.quizAttempt.update({
             where: { id: attemptId },
             data: {
@@ -273,6 +349,43 @@ export class QuizService {
         return prisma.quizAttempt.findUnique({
             where: { id },
             include: { quiz: true }
+        });
+    }
+
+    static async updateDeadlineById(
+        quizId: string,
+        requesterId: string,
+        requesterRole: string,
+        deadline: string | null
+    ): Promise<Quiz> {
+        const quiz = await prisma.quiz.findUnique({
+            where: { id: quizId },
+            select: {
+                id: true,
+                course: {
+                    select: {
+                        teacherId: true,
+                    },
+                },
+            },
+        });
+
+        if (!quiz) {
+            throw new ApiError(404, 'Quiz not found');
+        }
+
+        if (requesterRole !== 'ADMIN' && quiz.course.teacherId !== requesterId) {
+            throw new ApiError(403, 'Forbidden: You do not have permission to update this quiz deadline');
+        }
+
+        const parsedDeadline = this.parseDeadline(deadline);
+        this.ensureFutureDeadline(parsedDeadline);
+
+        return prisma.quiz.update({
+            where: { id: quizId },
+            data: {
+                deadline: parsedDeadline,
+            },
         });
     }
 

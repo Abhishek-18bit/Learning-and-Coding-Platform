@@ -33,4 +33,17 @@ export class DashboardController {
             next(error);
         }
     }
+
+    static async getPlatformStats(_req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            const data = await DashboardService.getPlatformStats();
+
+            res.status(200).json({
+                success: true,
+                data
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }

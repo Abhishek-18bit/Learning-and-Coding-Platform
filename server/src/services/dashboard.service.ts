@@ -1,6 +1,36 @@
 import prisma from '../db/prisma';
 
 export class DashboardService {
+    private static formatDateKey(date: Date): string {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    private static calculateCurrentSolveStreak(solvedDateKeys: string[]): number {
+        if (solvedDateKeys.length === 0) {
+            return 0;
+        }
+
+        const solvedDays = new Set(
+            solvedDateKeys
+                .map((value) => value?.trim())
+                .filter((value): value is string => Boolean(value))
+        );
+
+        const cursor = new Date();
+        cursor.setHours(0, 0, 0, 0);
+
+        let streak = 0;
+        while (solvedDays.has(this.formatDateKey(cursor))) {
+            streak += 1;
+            cursor.setDate(cursor.getDate() - 1);
+        }
+
+        return streak;
+    }
+
     static async getStudentData(userId: string) {
         const activityWindowStart = new Date();
         activityWindowStart.setDate(activityWindowStart.getDate() - 89);
@@ -14,7 +44,8 @@ export class DashboardService {
             recentQuizAttempts,
             recentInterviewProgress,
             recentEnrollments,
-            allEnrollments
+            allEnrollments,
+            solvedDayRows
         ] = await Promise.all([
             prisma.enrollment.count({ where: { userId } }),
             prisma.submission.count({ where: { studentId: userId, status: 'ACCEPTED' } }),
@@ -107,7 +138,14 @@ export class DashboardService {
                     }
                 },
                 orderBy: { enrolledAt: 'desc' }
-            })
+            }),
+            prisma.$queryRaw<Array<{ solvedDate: string }>>`
+                SELECT DISTINCT TO_CHAR(DATE("createdAt"), 'YYYY-MM-DD') AS "solvedDate"
+                FROM "Submission"
+                WHERE "studentId" = ${userId}
+                  AND "status" = 'ACCEPTED'
+                ORDER BY "solvedDate" DESC
+            `
         ]);
 
         const [questionsCount, completedQuestionsCount] = await Promise.all([
@@ -122,6 +160,7 @@ export class DashboardService {
         const quizAverage = quizAttempts.length > 0
             ? Math.round(quizAttempts.reduce((acc, curr) => acc + (curr.score || 0), 0) / quizAttempts.length)
             : 0;
+        const streakDays = this.calculateCurrentSolveStreak(solvedDayRows.map((row) => row.solvedDate));
 
         const derivedActivity = [
             ...activityLogs.map((log) => ({
@@ -185,6 +224,7 @@ export class DashboardService {
         return {
             coursesEnrolled: enrollmentCount,
             problemsSolved: solvedProblemsCount,
+            streakDays,
             quizAverage,
             interviewProgress,
             recentActivity: derivedActivity.map((entry) => ({
@@ -271,6 +311,45 @@ export class DashboardService {
                 status: s.status,
                 createdAt: s.createdAt
             }))
+        };
+    }
+
+    static async getPlatformStats() {
+        const [
+            totalCourses,
+            totalProblems,
+            totalQuizzes,
+            totalBattleRooms,
+            totalStudents,
+            totalTeachers,
+            aiGeneratedQuizzes,
+            totalSubmissions
+        ] = await Promise.all([
+            prisma.course.count(),
+            prisma.problem.count(),
+            prisma.quiz.count(),
+            prisma.battleRoom.count(),
+            prisma.user.count({ where: { role: 'STUDENT' } }),
+            prisma.user.count({ where: { role: { in: ['TEACHER', 'ADMIN'] } } }),
+            prisma.quiz.count({
+                where: {
+                    sourceType: {
+                        in: ['LESSON_AI', 'PDF_AI']
+                    }
+                }
+            }),
+            prisma.submission.count()
+        ]);
+
+        return {
+            totalCourses,
+            totalProblems,
+            totalQuizzes,
+            totalBattleRooms,
+            totalStudents,
+            totalTeachers,
+            aiGeneratedQuizzes,
+            totalSubmissions
         };
     }
 }

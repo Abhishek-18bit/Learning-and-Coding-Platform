@@ -47,6 +47,24 @@ export class LessonController {
         }
     }
 
+    static async getById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const lessonId = req.params.lessonId as string;
+            const lesson = await LessonService.findById(lessonId);
+
+            if (!lesson) {
+                throw new ApiError(404, 'Lesson not found');
+            }
+
+            res.status(200).json({
+                success: true,
+                lesson,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     static async generateQuiz(req: AuthRequest, res: Response, next: NextFunction) {
         try {
             if (!req.user) {
@@ -60,6 +78,7 @@ export class LessonController {
                 difficulty: req.body.difficulty,
                 questionCount: req.body.questionCount,
                 title: req.body.title,
+                deadline: req.body.deadline,
             });
 
             res.status(201).json({

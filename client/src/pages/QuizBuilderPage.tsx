@@ -23,6 +23,7 @@ interface ApiValidationError {
 interface FormErrors {
     title?: string;
     questions?: string;
+    deadline?: string;
 }
 
 const createEmptyQuestion = (): QuizBuilderQuestion => ({
@@ -47,6 +48,7 @@ const QuizBuilderPage = () => {
     const [title, setTitle] = useState('');
     const [difficulty, setDifficulty] = useState<Difficulty>('MEDIUM');
     const [lessonId, setLessonId] = useState('');
+    const [deadlineLocal, setDeadlineLocal] = useState('');
     const [questions, setQuestions] = useState<QuizBuilderQuestion[]>([createEmptyQuestion()]);
     const [formErrors, setFormErrors] = useState<FormErrors>({});
     const [questionErrors, setQuestionErrors] = useState<QuizBuilderQuestionErrors[]>([]);
@@ -69,6 +71,7 @@ const QuizBuilderPage = () => {
                 courseId: courseId!,
                 lessonId: lessonId || undefined,
                 difficulty,
+                deadline: deadlineLocal ? new Date(deadlineLocal).toISOString() : undefined,
                 questions: questions.map((question) => ({
                     question: question.question.trim(),
                     options: {
@@ -142,6 +145,15 @@ const QuizBuilderPage = () => {
 
         if (!questions.length) {
             nextFormErrors.questions = 'At least 1 question is required.';
+        }
+
+        if (deadlineLocal) {
+            const parsed = new Date(deadlineLocal);
+            if (Number.isNaN(parsed.getTime())) {
+                nextFormErrors.deadline = 'Deadline must be a valid date and time.';
+            } else if (parsed.getTime() <= Date.now()) {
+                nextFormErrors.deadline = 'Deadline must be in the future.';
+            }
         }
 
         questions.forEach((question, index) => {
@@ -247,13 +259,13 @@ const QuizBuilderPage = () => {
                             {formErrors.title && <p className="text-xs text-red-600 mt-1">{formErrors.title}</p>}
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-2">Difficulty</label>
                                 <select
                                     value={difficulty}
                                     onChange={(event) => setDifficulty(event.target.value as Difficulty)}
-                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white"
+                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-gray-50"
                                     disabled={createQuizMutation.isPending}
                                 >
                                     <option value="EASY">EASY</option>
@@ -267,7 +279,7 @@ const QuizBuilderPage = () => {
                                 <select
                                     value={lessonId}
                                     onChange={(event) => setLessonId(event.target.value)}
-                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white disabled:bg-gray-50"
+                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-gray-50 disabled:bg-gray-100"
                                     disabled={createQuizMutation.isPending || lessonsQuery.isLoading}
                                 >
                                     <option value="">All Course Lessons</option>
@@ -277,6 +289,19 @@ const QuizBuilderPage = () => {
                                         </option>
                                     ))}
                                 </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">Deadline (Optional)</label>
+                                <input
+                                    type="datetime-local"
+                                    value={deadlineLocal}
+                                    onChange={(event) => setDeadlineLocal(event.target.value)}
+                                    min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-gray-50 disabled:bg-gray-100"
+                                    disabled={createQuizMutation.isPending}
+                                />
+                                {formErrors.deadline && <p className="text-xs text-red-600 mt-1">{formErrors.deadline}</p>}
                             </div>
                         </div>
                     </section>

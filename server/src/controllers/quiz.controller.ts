@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { QuizService } from '../services/quiz.service';
 import { CourseService } from '../services/course.service';
+import { AchievementService } from '../services/achievement.service';
 import { AuthRequest } from '../middlewares/auth.middleware';
 import { ApiError } from '../utils/errors';
 
@@ -15,6 +16,7 @@ export class QuizController {
                 courseId: req.body.courseId,
                 lessonId: req.body.lessonId,
                 difficulty: req.body.difficulty,
+                deadline: req.body.deadline,
                 questions: req.body.questions,
             });
 
@@ -118,6 +120,9 @@ export class QuizController {
             if (!quiz.questions || quiz.questions.length === 0) {
                 throw new ApiError(400, 'Quiz is not published yet. It has no questions.');
             }
+            if (quiz.deadline && new Date(quiz.deadline).getTime() <= Date.now()) {
+                throw new ApiError(400, 'Quiz deadline has passed. Attempts are closed.');
+            }
 
             const enrolled = await CourseService.isStudentEnrolled(quiz.courseId, req.user.id);
             if (!enrolled) {
@@ -144,9 +149,13 @@ export class QuizController {
             if (!req.user) throw new ApiError(401, 'Unauthorized');
 
             const attemptId = req.params.attemptId as string;
-            const { score } = req.body;
+            const score = Number(req.body?.score);
 
-            const updatedAttempt = await QuizService.submitAttempt(attemptId, score);
+            if (!Number.isFinite(score) || score < 0 || score > 100) {
+                throw new ApiError(400, 'Score must be a number between 0 and 100');
+            }
+
+            const updatedAttempt = await QuizService.submitAttempt(attemptId, req.user.id, score);
             const attempt = await QuizService.findAttemptById(attemptId) as any;
 
             // Emit socket event
@@ -157,6 +166,15 @@ export class QuizController {
                 score,
                 attemptId
             });
+
+            try {
+                await AchievementService.onQuizAttemptSubmitted({
+                    userId: req.user.id,
+                    score,
+                });
+            } catch (error) {
+                console.error('Failed to evaluate quiz achievements:', error);
+            }
 
             res.status(200).json({
                 success: true,
@@ -178,6 +196,30 @@ export class QuizController {
             res.status(200).json({
                 success: true,
                 message: 'Quiz deleted successfully',
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    static async updateDeadline(req: AuthRequest, res: Response, next: NextFunction) {
+        try {
+            if (!req.user) throw new ApiError(401, 'Unauthorized');
+
+            const quizId = req.params.quizId as string;
+            const updatedQuiz = await QuizService.updateDeadlineById(
+                quizId,
+                req.user.id,
+                req.user.role,
+                req.body.deadline
+            );
+
+            res.status(200).json({
+                success: true,
+                message: updatedQuiz.deadline
+                    ? 'Quiz deadline updated successfully'
+                    : 'Quiz deadline removed successfully',
+                quiz: updatedQuiz,
             });
         } catch (error) {
             next(error);

@@ -4,13 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:generate:best-effort": "prisma generate || echo [warn] prisma generate skipped",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:deploy:retry": "powershell -ExecutionPolicy Bypass -File scripts/migrate-deploy-retry.ps1",
-    "predev": "npm run migrate:deploy:retry",
+    "predev": "npm run prisma:generate:best-effort && npm run migrate:deploy:retry",
     "dev": "ts-node-dev -r tsconfig-paths/register --respawn --transpile-only src/index.ts",
     "start:clean": "powershell -ExecutionPolicy Bypass -File start.ps1",
     "build": "tsc",
-    "prestart": "npm run migrate:deploy:retry",
+    "prestart": "npm run prisma:generate:best-effort && npm run migrate:deploy:retry",
     "start": "node dist/index.js",
     "postinstall": "prisma generate",
     "test": "jest"

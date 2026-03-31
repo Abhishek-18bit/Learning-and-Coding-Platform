@@ -55,6 +55,15 @@ export interface SubmitSummary {
     finalVerdict: SubmissionStatus;
 }
 
+export interface CustomRunResult {
+    output: string;
+    executionTime: number;
+    status: SubmissionStatus;
+    error: string | null;
+    expectedOutput: string | null;
+    isMatch: boolean | null;
+}
+
 export interface ProblemSubmissionResponse {
     submission: Submission;
     summary: SubmitSummary;
@@ -106,6 +115,26 @@ export const problemService = {
             submission: response.data.submission,
             summary: response.data.summary,
         };
+    },
+
+    runCustomByProblemId: async (
+        problemId: string,
+        language: string,
+        code: string,
+        input: string,
+        expectedOutput?: string
+    ) => {
+        const response = await api.post<{ success: boolean; result: CustomRunResult }>(
+            `/problems/${problemId}/run-custom`,
+            {
+                language,
+                code,
+                input,
+                ...(typeof expectedOutput === 'string' ? { expectedOutput } : {}),
+            }
+        );
+
+        return response.data.result;
     },
 
     submitCode: async (problemId: string, language: string, code: string) => {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { useAuth } from '../contexts/AuthContext';
 import { connectSocket, disconnectSocket } from '../lib/socket';
+import { getAuthToken } from '../utils/authToken';
 
 interface SocketContextType {
     socket: Socket | null;
@@ -21,7 +22,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const { user } = useAuth();
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
+        const token = getAuthToken();
         if (!user || !token) {
             disconnectSocket();
             setSocket(null);
@@ -62,7 +63,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             socketInstance.off('connect', handleConnect);
             socketInstance.off('disconnect', handleDisconnect);
         };
-    }, [user?.id]);
+    }, [user?.id, user?.role]);
 
     useEffect(() => () => {
         disconnectSocket();

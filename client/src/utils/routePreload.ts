@@ -7,7 +7,7 @@ interface RoutePreloadEntry {
 }
 
 const routePreloadEntries: RoutePreloadEntry[] = [
-    { key: 'landing', match: /^\/landing$/, load: () => import('../pages/LandingPage') },
+    { key: 'intro', match: /^\/intro$/, load: () => import('../pages/IntroPage') },
     { key: 'login', match: /^\/login$/, load: () => import('../pages/LoginPage') },
     { key: 'register', match: /^\/register$/, load: () => import('../pages/RegisterPage') },
     { key: 'dashboard', match: /^\/app\/dashboard$/, load: () => import('../pages/DashboardRouter') },
@@ -17,7 +17,9 @@ const routePreloadEntries: RoutePreloadEntry[] = [
     { key: 'problem-solve', match: /^\/app\/problem\/[^/]+$/, load: () => import('../pages/ProblemSolvePage') },
     { key: 'battle-index', match: /^\/app\/battle$/, load: () => import('../pages/battle/index') },
     { key: 'battle-room', match: /^\/app\/battle\/[^/]+$/, load: () => import('../pages/battle/[roomId]') },
+    { key: 'about', match: /^\/app\/about$/, load: () => import('../pages/AboutPage') },
     { key: 'quizzes', match: /^\/app\/quizzes$/, load: () => import('../pages/QuizListPage') },
+    { key: 'achievements', match: /^\/app\/achievements$/, load: () => import('../pages/AchievementsPage') },
     { key: 'quiz-attempt', match: /^\/app\/quiz\/[^/]+$/, load: () => import('../pages/QuizPage') },
     { key: 'practice', match: /^\/app\/practice$/, load: () => import('../pages/InterviewPrepPage') },
     { key: 'profile', match: /^\/app\/profile$/, load: () => import('../pages/ProfilePage') },

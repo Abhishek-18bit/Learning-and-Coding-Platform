@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const generateMaterialQuizSchema = z.object({
     title: z.string().min(3, 'Title must be at least 3 characters').max(120, 'Title must be at most 120 characters').optional(),
     difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).default('MEDIUM'),
+    deadline: z.string().datetime({ offset: true, message: 'Deadline must be a valid ISO datetime' }).optional(),
     questionCount: z
         .number()
         .int('Question count must be an integer')
@@ -10,4 +11,3 @@ export const generateMaterialQuizSchema = z.object({
         .max(10, 'Question count must be at most 10')
         .default(5),
 });
-

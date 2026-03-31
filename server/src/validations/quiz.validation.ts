@@ -30,6 +30,7 @@ export const createQuizSchema = z
         lessonId: z.string().uuid('Invalid Lesson ID').optional(),
         title: z.string().min(3, 'Title must be at least 3 characters'),
         difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).default('MEDIUM'),
+        deadline: z.string().datetime({ offset: true, message: 'Deadline must be a valid ISO datetime' }).optional(),
         questions: z.array(manualQuestionSchema).min(1, 'At least one question is required'),
     })
     .superRefine((quiz, ctx) => {
@@ -43,3 +44,10 @@ export const createQuizSchema = z
     });
 
 export const addQuestionSchema = manualQuestionSchema;
+
+export const updateQuizDeadlineSchema = z.object({
+    deadline: z
+        .string()
+        .datetime({ offset: true, message: 'Deadline must be a valid ISO datetime' })
+        .nullable(),
+});

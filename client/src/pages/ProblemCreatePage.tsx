@@ -206,7 +206,7 @@ const ProblemCreatePage = () => {
                 <button
                     type="button"
                     onClick={() => navigate(-1)}
-                    className="p-3 rounded-xl border border-gray-100 bg-white shadow-soft hover:bg-gray-50 transition-all"
+                    className="p-3 rounded-xl border border-gray-100 bg-gray-50 shadow-soft hover:bg-gray-100 transition-all"
                 >
                     <ChevronLeft size={20} />
                 </button>
@@ -237,7 +237,7 @@ const ProblemCreatePage = () => {
                                 <select
                                     value={difficulty}
                                     onChange={(event) => setDifficulty(event.target.value as Difficulty)}
-                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                     disabled={createMutation.isPending}
                                 >
                                     <option value="EASY">EASY</option>
@@ -250,7 +250,7 @@ const ProblemCreatePage = () => {
                                 <select
                                     value={selectedLessonId}
                                     onChange={(event) => setSelectedLessonId(event.target.value)}
-                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:bg-gray-50"
+                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:bg-gray-100"
                                     disabled={createMutation.isPending || lessonsQuery.isLoading || !resolvedCourseId}
                                 >
                                     <option value="">Select a lesson</option>
@@ -322,7 +322,7 @@ const ProblemCreatePage = () => {
                                     disabled={createMutation.isPending}
                                 />
                                 <div
-                                    className="rounded-xl border border-gray-200 bg-white px-4 py-3 min-h-56 overflow-auto text-sm leading-relaxed"
+                                    className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 min-h-56 overflow-auto text-sm leading-relaxed"
                                     dangerouslySetInnerHTML={{ __html: markdownPreview }}
                                 />
                             </div>

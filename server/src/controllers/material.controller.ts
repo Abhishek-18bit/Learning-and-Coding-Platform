@@ -109,6 +109,7 @@ export class MaterialController {
                 difficulty: req.body.difficulty,
                 questionCount: req.body.questionCount,
                 title: req.body.title,
+                deadline: req.body.deadline,
             });
 
             res.status(201).json({

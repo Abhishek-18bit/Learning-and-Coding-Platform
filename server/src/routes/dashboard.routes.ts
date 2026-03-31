@@ -4,6 +4,7 @@ import { DashboardController } from '../controllers/dashboard.controller';
 
 const router = Router();
 
+router.get('/platform-stats', DashboardController.getPlatformStats);
 router.get('/student', authenticate, authorize('STUDENT'), DashboardController.getStudentDashboard);
 router.get('/teacher', authenticate, authorize('TEACHER', 'ADMIN'), DashboardController.getTeacherDashboard);
 

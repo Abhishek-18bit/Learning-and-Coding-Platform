@@ -75,6 +75,7 @@ model User {
   createdChatChannels ChatChannel[]      @relation("ChatChannelCreator")
   chatMessages       ChatMessage[]       @relation("UserChatMessages")
   chatReadStates     ChatReadState[]     @relation("UserChatReadStates")
+  earnedBadges       UserBadge[]
 }
 
 model Course {
@@ -86,10 +87,41 @@ model Course {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   lessons     Lesson[]
+  units       CourseUnit[]
   quizzes     Quiz[]
   enrollments Enrollment[]
   materials   CourseMaterial[]
   chatChannel ChatChannel? @relation("CourseChatChannel")
+}
+
+model CourseUnit {
+  id            String       @id @default(uuid())
+  courseId      String
+  course        Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title         String
+  sortOrder     Int          @default(0)
+  estimatedHours Int?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  lessons       Lesson[]
+  topics        CourseTopic[]
+
+  @@index([courseId, sortOrder])
+}
+
+model CourseTopic {
+  id              String      @id @default(uuid())
+  unitId          String
+  unit            CourseUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  lessonId        String?     @unique
+  lesson          Lesson?     @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  title           String
+  sortOrder       Int         @default(0)
+  estimatedMinutes Int?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([unitId, sortOrder])
 }
 
 model CourseMaterial {
@@ -121,10 +153,15 @@ model Lesson {
   content   String?
   courseId  String
   course    Course    @relation(fields: [courseId], references: [id])
+  unitId    String?
+  unit      CourseUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  topic     CourseTopic?
   createdAt DateTime  @default(now())
   problems  Problem[]
   quizzes   Quiz[]
   chatChannel ChatChannel? @relation("LessonChatChannel")
+
+  @@index([courseId, unitId, createdAt])
 }
 
 model Problem {
@@ -145,6 +182,8 @@ model Problem {
   submissions   Submission[]
   progress      ProblemProgress[]
   battleRooms   BattleRoom[]
+  battleRoomProblems BattleRoomProblem[]
+  battleSubmissions BattleSubmission[]
   chatChannel   ChatChannel?      @relation("ProblemChatChannel")
 }
 
@@ -190,6 +229,7 @@ model Quiz {
   course      Course         @relation(fields: [courseId], references: [id])
   lessonId    String?
   lesson      Lesson?        @relation(fields: [lessonId], references: [id])
+  deadline    DateTime?
   difficulty  Difficulty     @default(MEDIUM)
   sourceType  QuizSourceType @default(MANUAL)
   timeLimit   Int
@@ -316,6 +356,32 @@ model ActivityLog {
   user      User     @relation(fields: [userId], references: [id])
 }
 
+model BadgeDefinition {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  title       String
+  description String
+  icon        String?
+  category    String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  userBadges  UserBadge[]
+}
+
+model UserBadge {
+  id        String          @id @default(uuid())
+  userId    String
+  badgeId   String
+  earnedAt  DateTime        @default(now())
+  metadata  Json?
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     BadgeDefinition @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId, earnedAt])
+  @@index([badgeId])
+}
+
 model BattleRoom {
   id              String            @id @default(uuid())
   roomCode        String            @unique
@@ -329,11 +395,27 @@ model BattleRoom {
   createdAt       DateTime          @default(now())
   problem         Problem           @relation(fields: [problemId], references: [id], onDelete: Cascade)
   teacher         User              @relation("TeacherBattleRooms", fields: [teacherId], references: [id], onDelete: Cascade)
+  problems        BattleRoomProblem[]
   participants    BattleParticipant[]
   submissions     BattleSubmission[]
   chatChannel     ChatChannel?      @relation("BattleRoomChatChannel")
 
   @@index([teacherId, status])
+  @@index([problemId])
+}
+
+model BattleRoomProblem {
+  id        String    @id @default(uuid())
+  roomId    String
+  problemId String
+  order     Int
+  createdAt DateTime  @default(now())
+  room      BattleRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  problem   Problem    @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, problemId])
+  @@unique([roomId, order])
+  @@index([roomId, order])
   @@index([problemId])
 }
 
@@ -353,6 +435,7 @@ model BattleParticipant {
 model BattleSubmission {
   id             String     @id @default(uuid())
   roomId          String
+  problemId       String
   userId          String
   attemptNumber   Int
   isCorrect       Boolean
@@ -360,9 +443,11 @@ model BattleSubmission {
   timeTaken       Int
   language        String
   room            BattleRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  problem         Problem    @relation(fields: [problemId], references: [id], onDelete: Cascade)
   user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, userId, attemptNumber])
+  @@index([problemId])
   @@index([roomId, submissionTime])
   @@index([roomId, isCorrect, timeTaken, attemptNumber])
 }

@@ -1,12 +1,29 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, BookOpen, Loader2, PlayCircle, FileText, CheckCircle, Sparkles, Code2, Plus } from 'lucide-react';
+import {
+    BookOpen,
+    CheckCircle,
+    ChevronLeft,
+    ChevronRight,
+    Code2,
+    FileText,
+    Loader2,
+    PlayCircle,
+    Plus,
+    Radar,
+    Sparkles,
+} from 'lucide-react';
 import { lessonService } from '../services/lesson.service';
 import { problemService } from '../services/problem.service';
 import { useAuth } from '../contexts/AuthContext';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
+import ProgressBar from '../components/ui/ProgressBar';
 import GenerateQuizModal from '../components/GenerateQuizModal';
 import ContextChatPanel from '../components/chat/ContextChatPanel';
+import { renderContentHtml } from '../utils/contentRenderer';
 
 const LessonPage = () => {
     const { lessonId } = useParams<{ lessonId: string }>();
@@ -18,196 +35,243 @@ const LessonPage = () => {
     const { data: lesson, isLoading, isError } = useQuery({
         queryKey: ['lesson', lessonId],
         queryFn: () => lessonService.getById(lessonId!),
-        enabled: !!lessonId,
+        enabled: Boolean(lessonId),
     });
+
     const { data: lessonProblems, isLoading: problemsLoading } = useQuery({
         queryKey: ['problems', lessonId],
         queryFn: () => problemService.getProblemsByLesson(lessonId!),
-        enabled: !!lessonId,
+        enabled: Boolean(lessonId),
     });
 
     if (isLoading) {
         return (
             <div className="h-[70vh] flex flex-col items-center justify-center space-y-4">
                 <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                <p className="text-secondary font-medium italic">Fetching lesson materials...</p>
+                <p className="typ-muted font-medium">Fetching lesson materials...</p>
             </div>
         );
     }
 
     if (isError || !lesson) {
         return (
-            <div className="p-10 text-center space-y-4">
-                <h2 className="text-2xl font-bold text-gray-900">Failed to load lesson</h2>
-                <button onClick={() => navigate(-1)} className="btn-gradient px-6 py-2">Go Back</button>
-            </div>
+            <Card variant="layered" className="p-10 text-center space-y-4 max-w-2xl mx-auto mt-10">
+                <h2 className="typ-h2 !text-2xl mb-0">Failed to load lesson</h2>
+                <div className="flex justify-center">
+                    <Button variant="primary" onClick={() => navigate(-1)}>Go Back</Button>
+                </div>
+            </Card>
         );
     }
 
     const isTeacher = user?.role === 'TEACHER';
     const hasLessonContent = Boolean(lesson.content?.trim());
+    const lessonProblemCount = lessonProblems?.length || 0;
+    const lessonContentHtml = useMemo(() => renderContentHtml(lesson.content || ''), [lesson.content]);
 
     return (
-        <div className="max-w-6xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="flex items-center gap-4">
+        <div className="mission-page pb-10">
+            <section className="mission-shell p-6 lg:p-7">
+                <div className="mission-shell-content space-y-5">
                     <button
                         onClick={() => navigate(-1)}
-                        className="p-3 bg-white rounded-2xl shadow-soft hover:bg-gray-50 transition-all text-secondary"
+                        className="inline-flex items-center gap-2 text-sm font-semibold text-muted hover:text-gray-700"
                     >
-                        <ChevronLeft size={24} />
+                        <ChevronLeft size={16} />
+                        Back
                     </button>
-                    <div>
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-primary/60">Module Content</span>
-                        <h1 className="text-3xl font-bold text-gray-900 font-headlines leading-none">{lesson.title}</h1>
-                    </div>
-                </div>
 
-                <div className="flex items-center gap-3">
-                    {isTeacher && (
-                        <button
-                            onClick={() => {
-                                if (!hasLessonContent) {
-                                    setLessonContentError('Lesson content is empty. Add content before generating a quiz.');
-                                    return;
-                                }
-                                setLessonContentError('');
-                                setShowGenerateModal(true);
-                            }}
-                            className="px-6 py-3 bg-white border border-gray-100 rounded-2xl text-sm font-bold text-primary hover:bg-primary/5 transition-all flex items-center gap-2"
-                        >
-                            <Sparkles size={18} />
-                            Generate Quiz
-                        </button>
-                    )}
-                    <button className="px-6 py-3 bg-white border border-gray-100 rounded-2xl text-sm font-bold text-secondary hover:text-primary transition-all flex items-center gap-2">
-                        <FileText size={18} />
-                        Resources
-                    </button>
-                    <button className="px-6 py-3 bg-primary text-white rounded-2xl text-sm font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-all flex items-center gap-2">
-                        <CheckCircle size={18} />
-                        Mark as Complete
-                    </button>
-                </div>
-            </div>
-            {lessonContentError && (
-                <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {lessonContentError}
-                </div>
-            )}
+                    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                        <div>
+                            <span className="mission-kicker">
+                                <span className="mission-kicker-dot" />
+                                Lesson Module
+                            </span>
+                            <h1 className="mission-title mt-3">{lesson.title}</h1>
+                            <p className="mission-subtitle">
+                                Continue the lesson path and apply concepts through coding challenges.
+                            </p>
+                        </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
-                {/* Content Area */}
-                <div className="lg:col-span-3 space-y-8">
-                    <div className="card-premium !p-12 prose prose-lg prose-primary max-w-none min-h-[500px]">
-                        <div className="text-gray-800 leading-relaxed space-y-6">
-                            {/* In a real app we'd use a Markdown component here */}
-                            <div className="whitespace-pre-wrap font-medium">
-                                {lesson.content}
-                            </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="mission-chip">
+                                <BookOpen size={13} />
+                                Lesson content
+                            </span>
+                            <span className="mission-chip">
+                                <Code2 size={13} />
+                                {lessonProblemCount} problems
+                            </span>
+                            <span className="mission-chip">
+                                <Radar size={13} />
+                                Live class chat
+                            </span>
                         </div>
                     </div>
 
-                    <div className="card-premium space-y-5">
-                        <div className="flex items-center justify-between">
+                    <div className="mission-toolbar">
+                        {isTeacher ? (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                    if (!hasLessonContent) {
+                                        setLessonContentError('Lesson content is empty. Add content before generating a quiz.');
+                                        return;
+                                    }
+                                    setLessonContentError('');
+                                    setShowGenerateModal(true);
+                                }}
+                            >
+                                <Sparkles size={15} />
+                                Generate Quiz
+                            </Button>
+                        ) : null}
+
+                        <Button variant="ghost" size="sm" className="border border-border">
+                            <FileText size={15} />
+                            Resources
+                        </Button>
+
+                        <Button variant="primary" size="sm">
+                            <CheckCircle size={15} />
+                            Mark as Complete
+                        </Button>
+                    </div>
+                </div>
+            </section>
+
+            {lessonContentError ? (
+                <Card variant="layered" className="border border-error/35 bg-error/15 px-4 py-3 text-sm text-error">
+                    {lessonContentError}
+                </Card>
+            ) : null}
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+                <div className="space-y-6">
+                    <Card variant="layered" className="space-y-4">
+                        <div>
+                            <p className="mission-panel-title">Lesson Content</p>
+                            <h2 className="typ-h2 !text-2xl mb-1 mt-2">Concept walkthrough</h2>
+                        </div>
+                        <div className="rounded-xl border border-border bg-card/70 p-5 min-h-[360px]">
+                            <div
+                                className="max-h-[34rem] overflow-y-auto pr-1"
+                                dangerouslySetInnerHTML={{ __html: lessonContentHtml }}
+                            />
+                        </div>
+                    </Card>
+
+                    <Card variant="glass" className="space-y-4">
+                        <div className="flex items-center justify-between gap-3">
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-900 font-headlines">Coding Problems</h2>
-                                <p className="text-sm text-secondary mt-1">Practice challenges linked with this lesson.</p>
+                                <p className="mission-panel-title">Coding Problems</p>
+                                <h2 className="typ-h2 !text-2xl mb-1 mt-2">Practice challenges</h2>
+                                <p className="typ-muted">Problems linked to this lesson for hands-on reinforcement.</p>
                             </div>
-                            {isTeacher && (
-                                <button
+                            {isTeacher ? (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
                                     onClick={() => navigate(`/app/lesson/${lesson.id}/problem/create`)}
-                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 text-primary font-semibold hover:bg-primary/20 transition-all"
                                 >
-                                    <Plus size={16} />
+                                    <Plus size={14} />
                                     Add Problem
-                                </button>
-                            )}
+                                </Button>
+                            ) : null}
                         </div>
 
                         {problemsLoading ? (
-                            <div className="py-10 text-center text-secondary text-sm">
-                                Loading problems...
-                            </div>
+                            <div className="py-10 text-center text-sm text-muted">Loading problems...</div>
                         ) : lessonProblems && lessonProblems.length > 0 ? (
                             <div className="space-y-3">
                                 {lessonProblems.map((problem) => (
-                                    <div key={problem.id} className="rounded-xl border border-gray-100 p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                                        <div className="flex items-start gap-3">
-                                            <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                                                <Code2 size={18} />
-                                            </div>
-                                            <div>
-                                                <h3 className="font-semibold text-gray-900">{problem.title}</h3>
-                                                <p className="text-xs text-secondary mt-1 line-clamp-2">{problem.description}</p>
-                                                <span className={`inline-block mt-2 px-2.5 py-1 rounded-full text-[11px] font-semibold ${problem.difficulty === 'EASY'
-                                                        ? 'bg-emerald-100 text-emerald-700'
-                                                        : problem.difficulty === 'MEDIUM'
-                                                            ? 'bg-amber-100 text-amber-700'
-                                                            : 'bg-rose-100 text-rose-700'
-                                                    }`}>
-                                                    {problem.difficulty}
-                                                </span>
+                                    <div
+                                        key={problem.id}
+                                        className="rounded-xl border border-border bg-card/70 p-4 flex flex-col md:flex-row md:items-center justify-between gap-3"
+                                    >
+                                        <div className="flex items-start gap-3 min-w-0">
+                                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary-blue/15 text-primary-cyan">
+                                                <Code2 size={17} />
+                                            </span>
+                                            <div className="min-w-0">
+                                                <h3 className="text-sm font-semibold text-gray-900 truncate">{problem.title}</h3>
+                                                <p className="text-xs text-muted mt-1 line-clamp-2">{problem.description}</p>
+                                                <div className="mt-2">
+                                                    <Badge
+                                                        variant={
+                                                            problem.difficulty === 'EASY'
+                                                                ? 'success'
+                                                                : problem.difficulty === 'MEDIUM'
+                                                                  ? 'warning'
+                                                                  : 'error'
+                                                        }
+                                                    >
+                                                        {problem.difficulty}
+                                                    </Badge>
+                                                </div>
                                             </div>
                                         </div>
-                                        <button
+
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
                                             onClick={() => navigate(`/app/problem/${problem.id}`)}
-                                            className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors"
                                         >
                                             {user?.role === 'STUDENT' ? 'Solve' : 'Open'}
-                                        </button>
+                                        </Button>
                                     </div>
                                 ))}
                             </div>
                         ) : (
-                            <div className="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-secondary">
+                            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
                                 No coding problems published for this lesson yet.
                             </div>
                         )}
-                    </div>
+                    </Card>
 
-                    {/* Navigation Footer */}
-                    <div className="flex items-center justify-between pt-8 border-t border-gray-100">
-                        <button className="flex items-center gap-3 text-secondary font-bold hover:text-primary transition-colors group">
-                            <div className="p-2 rounded-xl bg-gray-50 group-hover:bg-primary/10 transition-colors">
-                                <ChevronLeft size={20} />
-                            </div>
+                    <Card variant="layered" className="flex items-center justify-between gap-4">
+                        <Button variant="ghost" size="sm" className="border border-border">
+                            <ChevronLeft size={16} />
                             Previous Lesson
-                        </button>
-                        <button className="flex items-center gap-3 text-primary font-bold hover:text-primary-dark transition-colors group">
+                        </Button>
+                        <Button variant="secondary" size="sm">
                             Next Lesson
-                            <div className="p-2 rounded-xl bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                                <ChevronRight size={20} />
-                            </div>
-                        </button>
-                    </div>
+                            <ChevronRight size={16} />
+                        </Button>
+                    </Card>
                 </div>
 
-                {/* Sidebar */}
-                <div className="space-y-8">
-                    <div className="card-premium space-y-6">
-                        <h3 className="text-lg font-bold font-headlines flex items-center gap-2">
-                            <BookOpen size={20} className="text-primary" />
-                            Lesson Index
-                        </h3>
-                        <div className="space-y-4">
-                            {[1, 2, 3].map((i) => (
-                                <div key={i} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${i === 1 ? 'bg-primary/5 text-primary border border-primary/10' : 'text-secondary hover:bg-gray-50 cursor-pointer'}`}>
-                                    <PlayCircle size={18} className={i === 1 ? 'text-primary' : 'text-gray-300'} />
-                                    <span className="text-sm font-bold leading-tight">Module {i}: Advanced Patterns</span>
+                <div className="space-y-6">
+                    <Card variant="layered" className="space-y-4">
+                        <div>
+                            <p className="mission-panel-title">Lesson Index</p>
+                            <h3 className="typ-h3 !text-xl mb-1 mt-2">Module sequence</h3>
+                        </div>
+                        <div className="space-y-2">
+                            {[1, 2, 3].map((index) => (
+                                <div
+                                    key={index}
+                                    className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${
+                                        index === 1
+                                            ? 'border-primary-blue/45 bg-primary-blue/12 text-primary-cyan'
+                                            : 'border-border bg-card/70 text-muted'
+                                    }`}
+                                >
+                                    <PlayCircle size={16} />
+                                    <span className="text-sm font-semibold">Module {index}: Advanced Patterns</span>
                                 </div>
                             ))}
                         </div>
-                    </div>
+                    </Card>
 
-                    <div className="card-premium bg-gray-900 text-white !border-none !p-8 space-y-4">
-                        <h4 className="font-bold">Next Milestone</h4>
-                        <p className="text-xs text-white/50 leading-relaxed">Complete this lesson to unlock the accompanying coding challenges and assessments.</p>
-                        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary w-1/3 rounded-full"></div>
-                        </div>
-                    </div>
+                    <Card variant="glass" className="space-y-3">
+                        <h4 className="typ-h3 !mb-0 !text-lg">Next Milestone</h4>
+                        <p className="typ-muted">
+                            Complete this lesson to unlock accompanying coding challenges and assessments.
+                        </p>
+                        <ProgressBar value={33} showLabel />
+                    </Card>
 
                     <ContextChatPanel
                         contextType="LESSON"
@@ -217,7 +281,8 @@ const LessonPage = () => {
                     />
                 </div>
             </div>
-            {isTeacher && (
+
+            {isTeacher ? (
                 <GenerateQuizModal
                     isOpen={showGenerateModal}
                     lessonId={lesson.id}
@@ -227,7 +292,7 @@ const LessonPage = () => {
                     onClose={() => setShowGenerateModal(false)}
                     onSaved={(quizId) => navigate(`/app/quizzes/${quizId}/manage`)}
                 />
-            )}
+            ) : null}
         </div>
     );
 };

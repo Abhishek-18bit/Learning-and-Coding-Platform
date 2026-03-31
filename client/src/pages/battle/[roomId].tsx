@@ -6,14 +6,22 @@ import { AlertTriangle, Loader2, Radio, Square, Trophy } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../providers/SocketProvider';
 import { onManagedSocketEvent } from '../../lib/socket';
-import { battleService, type BattleLeaderboardEntry, type BattleRoomSnapshot, type BattleRoomStatus, type BattleSubmissionSummary } from '../../services/battle.service';
+import {
+    battleService,
+    type BattleLeaderboardEntry,
+    type BattleRoomSnapshot,
+    type BattleRoomStatus,
+    type BattleSubmissionSummary,
+} from '../../services/battle.service';
 import { problemService } from '../../services/problem.service';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
+import Modal from '../../components/ui/Modal';
 import BattleLobby from '../../components/battle/BattleLobby';
 import BattleRoom from '../../components/battle/BattleRoom';
 import ResultScreen from '../../components/battle/ResultScreen';
+import BattleBackground from '../../components/battle/BattleBackground';
 
 type BattlePhase = 'LOBBY' | 'LIVE' | 'RESULT';
 
@@ -40,6 +48,10 @@ interface BattleStartedEvent {
 
 interface BattleEndedEvent {
     roomId: string;
+    reason?: 'MANUAL' | 'TIME_UP';
+    teacherNote?: string | null;
+    endedByUserId?: string | null;
+    endedAt?: string | null;
     leaderboard: BattleLeaderboardEntry[];
 }
 
@@ -52,11 +64,13 @@ interface TimerSyncEvent {
 
 interface SubmissionResultEvent {
     roomId: string;
+    problemId?: string;
     summary: BattleSubmissionSummary;
 }
 
 interface ErrorEventPayload {
     message?: string;
+    statusCode?: number;
 }
 
 const statusBadgeVariant = (status: BattleRoomStatus): 'warning' | 'success' | 'error' => {
@@ -70,6 +84,25 @@ const getBattlePhase = (status: BattleRoomStatus): BattlePhase => {
     if (status === 'LIVE') return 'LIVE';
     return 'RESULT';
 };
+
+const isSessionMismatchIssue = (message?: string, statusCode?: number) => {
+    if (statusCode === 401) {
+        return true;
+    }
+
+    const normalizedMessage = String(message || '').toLowerCase();
+    return (
+        normalizedMessage.includes('socket identity mismatch') ||
+        normalizedMessage.includes('unauthorized socket request') ||
+        normalizedMessage.includes('invalid token') ||
+        normalizedMessage.includes('jwt')
+    );
+};
+
+const getSessionMismatchNotice = () =>
+    'Session mismatch detected for this battle tab. Reload this tab or login again.';
+
+const DEFAULT_BATTLE_CODE = 'function solve(input) {\n  return input;\n}';
 
 const BattleRoomPage = () => {
     const { roomId } = useParams<{ roomId: string }>();
@@ -86,11 +119,14 @@ const BattleRoomPage = () => {
     const [timerServerTime, setTimerServerTime] = useState<string | null>(null);
     const [battlePhase, setBattlePhase] = useState<BattlePhase>('LOBBY');
     const [language, setLanguage] = useState('javascript');
-    const [code, setCode] = useState('function solve(input) {\n  return input;\n}');
-    const [codeTouched, setCodeTouched] = useState(false);
+    const [activeProblemId, setActiveProblemId] = useState('');
+    const [codeByProblem, setCodeByProblem] = useState<Record<string, string>>({});
     const [submitSummary, setSubmitSummary] = useState<BattleSubmissionSummary | null>(null);
     const [submitError, setSubmitError] = useState('');
     const [socketMessage, setSocketMessage] = useState('');
+    const [sessionMismatchNotice, setSessionMismatchNotice] = useState('');
+    const [showEndBattleModal, setShowEndBattleModal] = useState(false);
+    const [endBattleReason, setEndBattleReason] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isStarting, setIsStarting] = useState(false);
     const [isSocketDisconnected, setIsSocketDisconnected] = useState(false);
@@ -106,9 +142,9 @@ const BattleRoomPage = () => {
     });
 
     const problemQuery = useQuery({
-        queryKey: ['battle-problem', snapshot?.problemId],
-        queryFn: () => problemService.getProblemById(snapshot!.problemId),
-        enabled: Boolean(snapshot?.problemId),
+        queryKey: ['battle-problem', activeProblemId],
+        queryFn: () => problemService.getProblemById(activeProblemId),
+        enabled: Boolean(activeProblemId),
     });
 
     const clearStartFallback = useCallback(() => {
@@ -119,6 +155,9 @@ const BattleRoomPage = () => {
     }, []);
 
     const applySnapshot = useCallback((nextSnapshot: BattleRoomSnapshot) => {
+        const nextProblemIds = (nextSnapshot.problems || []).map((problem) => problem.id);
+        const fallbackProblemId = nextProblemIds[0] || nextSnapshot.problemId;
+
         setSnapshot(nextSnapshot);
         setRoomStatus(nextSnapshot.status);
         setParticipants(nextSnapshot.participantCount);
@@ -126,22 +165,45 @@ const BattleRoomPage = () => {
         setLeaderboard(nextSnapshot.leaderboard || []);
         setRemainingTime(nextSnapshot.remainingTimeMs);
         setBattlePhase(getBattlePhase(nextSnapshot.status));
+        setActiveProblemId((current) =>
+            current && nextProblemIds.includes(current) ? current : fallbackProblemId
+        );
+        setCodeByProblem((current) => {
+            const next: Record<string, string> = {};
+            nextProblemIds.forEach((problemId) => {
+                if (typeof current[problemId] === 'string') {
+                    next[problemId] = current[problemId];
+                }
+            });
+            return next;
+        });
         if (nextSnapshot.status !== 'LIVE') {
             setIsSubmitting(false);
         }
     }, []);
 
     const endBattleMutation = useMutation({
-        mutationFn: () => battleService.endRoom(roomId!),
-        onSuccess: (nextSnapshot) => {
-            applySnapshot(nextSnapshot);
-            setSocketMessage('');
-        },
-        onError: (error) => {
-            const axiosError = error as AxiosError<{ message?: string }>;
-            setSocketMessage(axiosError.response?.data?.message || 'Unable to end battle.');
-        },
-    });
+        mutationFn: () => battleService.endRoom(roomId!, endBattleReason),
+            onSuccess: (nextSnapshot) => {
+                applySnapshot(nextSnapshot);
+                setSocketMessage('');
+                setSessionMismatchNotice('');
+                setShowEndBattleModal(false);
+                setEndBattleReason('');
+            },
+            onError: (error) => {
+                const axiosError = error as AxiosError<{ message?: string }>;
+                const statusCode = axiosError.response?.status;
+                const message = axiosError.response?.data?.message || 'Unable to end battle.';
+                if (isSessionMismatchIssue(message, statusCode)) {
+                    const notice = getSessionMismatchNotice();
+                    setSessionMismatchNotice(notice);
+                    setSocketMessage(notice);
+                } else {
+                    setSocketMessage(message);
+                }
+            },
+        });
 
     useEffect(() => {
         if (!roomQuery.data) {
@@ -151,11 +213,38 @@ const BattleRoomPage = () => {
     }, [applySnapshot, roomQuery.data]);
 
     useEffect(() => {
-        if (!problemQuery.data?.starterCode || codeTouched) {
+        if (!activeProblemId) {
             return;
         }
-        setCode(problemQuery.data.starterCode);
-    }, [codeTouched, problemQuery.data?.starterCode]);
+
+        setCodeByProblem((current) => {
+            if (typeof current[activeProblemId] === 'string') {
+                return current;
+            }
+            return {
+                ...current,
+                [activeProblemId]: DEFAULT_BATTLE_CODE,
+            };
+        });
+    }, [activeProblemId]);
+
+    useEffect(() => {
+        if (!activeProblemId || !problemQuery.data?.starterCode) {
+            return;
+        }
+
+        setCodeByProblem((current) => {
+            const existing = current[activeProblemId];
+            if (typeof existing === 'string' && existing !== DEFAULT_BATTLE_CODE) {
+                return current;
+            }
+
+            return {
+                ...current,
+                [activeProblemId]: problemQuery.data.starterCode,
+            };
+        });
+    }, [activeProblemId, problemQuery.data?.starterCode]);
 
     useEffect(() => {
         if (!socket || !roomId || !user) {
@@ -169,6 +258,7 @@ const BattleRoomPage = () => {
                 }
                 applySnapshot(payload.room);
                 setSocketMessage('');
+                setSessionMismatchNotice('');
                 setIsSocketDisconnected(false);
             }),
             onManagedSocketEvent(socket, 'participant_update', (payload: ParticipantUpdateEvent) => {
@@ -194,6 +284,7 @@ const BattleRoomPage = () => {
                 setBattlePhase('LIVE');
                 setRemainingTime(payload.remainingTimeMs || 0);
                 setSocketMessage('');
+                setSessionMismatchNotice('');
             }),
             onManagedSocketEvent(socket, 'battle_ended', (payload: BattleEndedEvent) => {
                 if (!payload || payload.roomId !== roomId) {
@@ -206,6 +297,15 @@ const BattleRoomPage = () => {
                 setBattlePhase('RESULT');
                 setRemainingTime(0);
                 setLeaderboard(payload.leaderboard || []);
+                if (payload.reason === 'TIME_UP') {
+                    setSocketMessage('Battle ended: time is up.');
+                } else if (payload.reason === 'MANUAL') {
+                    if (payload.teacherNote) {
+                        setSocketMessage(`Battle ended by teacher: ${payload.teacherNote}`);
+                    } else {
+                        setSocketMessage('Battle ended by teacher.');
+                    }
+                }
             }),
             onManagedSocketEvent(socket, 'timer_sync', (payload: TimerSyncEvent) => {
                 if (!payload || payload.roomId !== roomId) {
@@ -229,13 +329,21 @@ const BattleRoomPage = () => {
                 setIsSubmitting(false);
                 setIsStarting(false);
                 const message = payload?.message || 'Battle action failed.';
-                setSubmitError(message);
-                setSocketMessage(message);
+                if (isSessionMismatchIssue(message, payload?.statusCode)) {
+                    const notice = getSessionMismatchNotice();
+                    setSessionMismatchNotice(notice);
+                    setSubmitError(notice);
+                    setSocketMessage(notice);
+                } else {
+                    setSubmitError(message);
+                    setSocketMessage(message);
+                }
             }),
             onManagedSocketEvent(socket, 'connect', () => {
                 setIsSocketDisconnected(false);
                 setSocketMessage('');
-                socket.emit('join_room', { roomId });
+                setSessionMismatchNotice('');
+                socket.emit('join_room', { roomId, userId: user.id });
                 void roomQuery.refetch();
             }),
             onManagedSocketEvent(socket, 'disconnect', () => {
@@ -244,10 +352,10 @@ const BattleRoomPage = () => {
             }),
         ];
 
-        socket.emit('join_room', { roomId });
+        socket.emit('join_room', { roomId, userId: user.id });
 
         return () => {
-            socket.emit('leave_room', { roomId });
+            socket.emit('leave_room', { roomId, userId: user.id });
             unsubscribers.forEach((unsubscribe) => unsubscribe());
         };
     }, [applySnapshot, clearStartFallback, roomId, roomQuery.refetch, socket, user]);
@@ -262,6 +370,8 @@ const BattleRoomPage = () => {
     );
     const currentUserRank = currentUserEntry?.rank ?? null;
     const currentUserAttempts = currentUserEntry?.attemptNumber ?? 0;
+    const currentUserScore = currentUserEntry?.score ?? 0;
+    const activeCode = activeProblemId ? codeByProblem[activeProblemId] || DEFAULT_BATTLE_CODE : DEFAULT_BATTLE_CODE;
 
     const handleStartBattle = () => {
         if (!socket || !roomId || roomStatus !== 'WAITING') {
@@ -271,13 +381,42 @@ const BattleRoomPage = () => {
         clearStartFallback();
         setIsStarting(true);
         setSubmitError('');
-        socket.emit('start_battle', { roomId });
+        socket.emit('start_battle', { roomId, userId: user?.id });
         startFallbackRef.current = window.setTimeout(() => {
-            setIsStarting(false);
-        }, 8000);
+            // Fallback to authenticated REST start in case socket auth/session is stale.
+            void battleService
+                .startRoom(roomId)
+                .then((snapshot) => {
+                    applySnapshot(snapshot);
+                    setSocketMessage('');
+                    setSessionMismatchNotice('');
+                })
+                .catch((error) => {
+                    const axiosError = error as AxiosError<{ message?: string }>;
+                    const statusCode = axiosError.response?.status;
+                    const message = axiosError.response?.data?.message || 'Unable to start battle.';
+                    if (isSessionMismatchIssue(message, statusCode)) {
+                        const notice = getSessionMismatchNotice();
+                        setSessionMismatchNotice(notice);
+                        setSocketMessage(notice);
+                    } else {
+                        setSocketMessage(message);
+                    }
+                })
+                .finally(() => {
+                    setIsStarting(false);
+                });
+        }, 2500);
     };
 
     const handleEndBattle = () => {
+        if (!isTeacher || roomStatus === 'ENDED' || endBattleMutation.isPending) {
+            return;
+        }
+        setShowEndBattleModal(true);
+    };
+
+    const handleConfirmEndBattle = () => {
         if (!roomId || endBattleMutation.isPending || roomStatus === 'ENDED') {
             return;
         }
@@ -289,11 +428,19 @@ const BattleRoomPage = () => {
             setSubmitError('Realtime connection unavailable. Please retry.');
             return;
         }
+        if (!user?.id) {
+            setSubmitError('Authentication state is missing. Please re-login.');
+            return;
+        }
         if (roomStatus !== 'LIVE') {
             setSubmitError('Battle is not live.');
             return;
         }
-        if (!code.trim()) {
+        if (!activeProblemId) {
+            setSubmitError('Select a problem before submitting.');
+            return;
+        }
+        if (!activeCode.trim()) {
             setSubmitError('Code cannot be empty.');
             return;
         }
@@ -306,8 +453,10 @@ const BattleRoomPage = () => {
         setSubmitError('');
         socket.emit('submit_attempt', {
             roomId,
-            code,
+            problemId: activeProblemId,
+            code: activeCode,
             language,
+            userId: user.id,
         });
     };
 
@@ -354,7 +503,9 @@ const BattleRoomPage = () => {
     }
 
     return (
-        <div className="mx-auto max-w-[1500px] space-y-6">
+        <div className="relative isolate min-h-[calc(100vh-7.5rem)]">
+            <BattleBackground />
+            <div className="relative z-10 mx-auto max-w-[1500px] space-y-6 pb-6">
             <Card variant="glass" className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
@@ -380,6 +531,7 @@ const BattleRoomPage = () => {
                             )}
                         </Badge>
                         {currentUserRank ? <Badge variant="primary">Rank #{currentUserRank}</Badge> : null}
+                        <Badge variant="success">Score {currentUserScore}</Badge>
                         <Badge variant="muted">Attempts {currentUserAttempts}</Badge>
                     </div>
                 </div>
@@ -388,6 +540,28 @@ const BattleRoomPage = () => {
                     <p className="rounded-xl border border-warning/35 bg-warning/15 px-3 py-2 text-sm text-warning">
                         {socketMessage}
                     </p>
+                ) : null}
+
+                {sessionMismatchNotice ? (
+                    <div className="rounded-xl border border-error/35 bg-error/15 px-3 py-3 text-sm text-error">
+                        <p>{sessionMismatchNotice}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => window.location.reload()}
+                            >
+                                Reload Tab
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => navigate('/login')}
+                            >
+                                Login Again
+                            </Button>
+                        </div>
+                    </div>
                 ) : null}
 
                 {isTeacher ? (
@@ -433,9 +607,11 @@ const BattleRoomPage = () => {
                 <BattleRoom
                     roomId={roomId}
                     status={roomStatus}
+                    problems={snapshot?.problems || []}
+                    activeProblemId={activeProblemId}
                     problem={problemQuery.data || null}
                     language={language}
-                    code={code}
+                    code={activeCode}
                     canSubmit={!isTeacher}
                     isSubmitting={isSubmitting}
                     participantCount={participants}
@@ -447,9 +623,15 @@ const BattleRoomPage = () => {
                     submitSummary={submitSummary}
                     submitError={submitError}
                     onLanguageChange={setLanguage}
+                    onActiveProblemChange={setActiveProblemId}
                     onCodeChange={(value) => {
-                        setCode(value);
-                        setCodeTouched(true);
+                        if (!activeProblemId) {
+                            return;
+                        }
+                        setCodeByProblem((current) => ({
+                            ...current,
+                            [activeProblemId]: value,
+                        }));
                     }}
                     onSubmit={handleSubmitAttempt}
                     onTimerElapsed={() => {
@@ -469,6 +651,59 @@ const BattleRoomPage = () => {
                     onReturn={() => navigate('/app/dashboard')}
                 />
             ) : null}
+
+            <Modal
+                isOpen={showEndBattleModal}
+                onClose={() => {
+                    if (!endBattleMutation.isPending) {
+                        setShowEndBattleModal(false);
+                    }
+                }}
+                title="End Battle Early?"
+                description="This will immediately stop submissions and finalize rankings."
+                maxWidthClassName="max-w-lg"
+                footer={
+                    <div className="flex items-center justify-end gap-2">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowEndBattleModal(false)}
+                            disabled={endBattleMutation.isPending}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={handleConfirmEndBattle}
+                            disabled={endBattleMutation.isPending}
+                        >
+                            {endBattleMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+                            {endBattleMutation.isPending ? 'Ending...' : 'End Now'}
+                        </Button>
+                    </div>
+                }
+            >
+                <div className="space-y-3">
+                    <div className="rounded-xl border border-warning/35 bg-warning/15 px-3 py-2 text-sm text-warning">
+                        Students will be moved to the result screen and timer will stop at once.
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="label-base">Optional reason to show participants</label>
+                        <textarea
+                            value={endBattleReason}
+                            onChange={(event) => setEndBattleReason(event.target.value.slice(0, 240))}
+                            className="input-base min-h-[88px] resize-y"
+                            placeholder="e.g. Ending due to class time over."
+                            maxLength={240}
+                            disabled={endBattleMutation.isPending}
+                        />
+                        <p className="text-xs text-muted">{endBattleReason.length}/240</p>
+                    </div>
+                </div>
+            </Modal>
+            </div>
         </div>
     );
 };

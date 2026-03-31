@@ -37,6 +37,7 @@ const GenerateFromPDFModal = ({
 }: GenerateFromPDFModalProps) => {
     const [difficulty, setDifficulty] = useState<Difficulty>('MEDIUM');
     const [questionCount, setQuestionCount] = useState(5);
+    const [deadlineLocal, setDeadlineLocal] = useState('');
     const [quizTitle, setQuizTitle] = useState('');
     const [questions, setQuestions] = useState<EditableQuizQuestion[]>([]);
     const [errors, setErrors] = useState<EditableQuizQuestionErrors[]>([]);
@@ -52,6 +53,7 @@ const GenerateFromPDFModal = ({
         setGenerateError('');
         setSaveError('');
         setProgress(0);
+        setDeadlineLocal('');
     }, [isOpen, material]);
 
     const generateMutation = useMutation({
@@ -60,6 +62,7 @@ const GenerateFromPDFModal = ({
             return materialService.generateQuizFromPdf(material.id, {
                 difficulty,
                 questionCount,
+                deadline: deadlineLocal ? new Date(deadlineLocal).toISOString() : undefined,
             });
         },
         onSuccess: (quiz) => {
@@ -117,6 +120,7 @@ const GenerateFromPDFModal = ({
                 title: quizTitle.trim(),
                 courseId,
                 difficulty,
+                deadline: deadlineLocal ? new Date(deadlineLocal).toISOString() : undefined,
                 questions: questions.map((question) => ({
                     question: question.question.trim(),
                     options: {
@@ -193,7 +197,7 @@ const GenerateFromPDFModal = ({
     return (
         <div className="fixed inset-0 z-[120] bg-gray-900/60 backdrop-blur-sm p-4 flex items-center justify-center modal-fade-overlay">
             <div className="w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-3xl bg-background-soft border border-white/30 shadow-2xl modal-fade-panel">
-                <div className="px-6 py-5 bg-white border-b border-gray-100 flex items-center justify-between">
+                <div className="px-6 py-5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
                             <Sparkles size={20} className="text-primary" />
@@ -218,14 +222,14 @@ const GenerateFromPDFModal = ({
                         Large PDFs can take longer to process and may timeout. For best results, upload text-based PDFs under 10MB.
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label className="text-sm font-semibold text-gray-700 block mb-2">Difficulty</label>
                             <select
                                 value={difficulty}
                                 onChange={(event) => setDifficulty(event.target.value as Difficulty)}
                                 disabled={isBusy}
-                                className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-white focus-glow disabled:bg-gray-50"
+                                className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-900 focus-glow disabled:bg-gray-100"
                             >
                                 <option value="EASY">EASY</option>
                                 <option value="MEDIUM">MEDIUM</option>
@@ -238,7 +242,7 @@ const GenerateFromPDFModal = ({
                                 value={questionCount}
                                 onChange={(event) => setQuestionCount(Number(event.target.value))}
                                 disabled={isBusy}
-                                className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-white focus-glow disabled:bg-gray-50"
+                                className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-900 focus-glow disabled:bg-gray-100"
                             >
                                 {[5, 6, 7, 8, 9, 10].map((count) => (
                                     <option key={count} value={count}>
@@ -246,6 +250,17 @@ const GenerateFromPDFModal = ({
                                     </option>
                                 ))}
                             </select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-semibold text-gray-700 block mb-2">Deadline (Optional)</label>
+                            <input
+                                type="datetime-local"
+                                value={deadlineLocal}
+                                onChange={(event) => setDeadlineLocal(event.target.value)}
+                                min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                                disabled={isBusy}
+                                className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-900 focus-glow disabled:bg-gray-100"
+                            />
                         </div>
                         <div className="flex items-end">
                             <button
@@ -294,7 +309,7 @@ const GenerateFromPDFModal = ({
                                     value={quizTitle}
                                     onChange={(event) => setQuizTitle(event.target.value)}
                                     disabled={isBusy}
-                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-white focus-glow disabled:bg-gray-50"
+                                    className="w-full rounded-xl border border-gray-200 px-4 py-3 bg-gray-50 text-gray-900 focus-glow disabled:bg-gray-100"
                                 />
                             </div>
 

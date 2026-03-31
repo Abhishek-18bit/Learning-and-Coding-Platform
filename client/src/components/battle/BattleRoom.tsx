@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Loader2, Send, Signal, Timer } from 'lucide-react';
 import Button from '../ui/Button';
@@ -9,6 +9,7 @@ import LiveLeaderboard from './LiveLeaderboard';
 import type { Problem } from '../../services/problem.service';
 import type {
     BattleLeaderboardEntry,
+    BattleRoomProblem,
     BattleRoomStatus,
     BattleSubmissionSummary,
 } from '../../services/battle.service';
@@ -17,6 +18,8 @@ import ContextChatPanel from '../chat/ContextChatPanel';
 interface BattleRoomProps {
     roomId: string;
     status: BattleRoomStatus;
+    problems: BattleRoomProblem[];
+    activeProblemId: string;
     problem: Problem | null;
     language: string;
     code: string;
@@ -31,6 +34,7 @@ interface BattleRoomProps {
     submitSummary: BattleSubmissionSummary | null;
     submitError: string;
     onLanguageChange: (language: string) => void;
+    onActiveProblemChange: (problemId: string) => void;
     onCodeChange: (code: string) => void;
     onSubmit: () => void;
     onTimerElapsed: () => void;
@@ -39,6 +43,8 @@ interface BattleRoomProps {
 const BattleRoom = ({
     roomId,
     status,
+    problems,
+    activeProblemId,
     problem,
     language,
     code,
@@ -53,6 +59,7 @@ const BattleRoom = ({
     submitSummary,
     submitError,
     onLanguageChange,
+    onActiveProblemChange,
     onCodeChange,
     onSubmit,
     onTimerElapsed,
@@ -63,6 +70,11 @@ const BattleRoom = ({
     const editorContainerRef = useRef<HTMLDivElement | null>(null);
     const [editorReady, setEditorReady] = useState(false);
     const [fallbackEditorEnabled, setFallbackEditorEnabled] = useState(false);
+    const currentUserEntry = useMemo(
+        () => leaderboard.find((entry) => entry.userId === currentUserId),
+        [leaderboard, currentUserId]
+    );
+    const showFallbackEditor = fallbackEditorEnabled && !editorReady;
 
     useEffect(() => {
         if (editorReady) {
@@ -71,7 +83,7 @@ const BattleRoom = ({
 
         const timeoutId = window.setTimeout(() => {
             setFallbackEditorEnabled(true);
-        }, 2000);
+        }, 5000);
 
         return () => window.clearTimeout(timeoutId);
     }, [editorReady]);
@@ -89,6 +101,24 @@ const BattleRoom = ({
         return () => observer.disconnect();
     }, []);
 
+    const handleEditorWheelCapture = (event: ReactWheelEvent<HTMLDivElement>) => {
+        if (!editorRef.current || !editorReady || showFallbackEditor) {
+            return;
+        }
+
+        const editor = editorRef.current;
+        const horizontalDelta = event.shiftKey ? event.deltaY : event.deltaX;
+
+        if (Math.abs(horizontalDelta) > Math.abs(event.deltaY)) {
+            editor.setScrollLeft(editor.getScrollLeft() + horizontalDelta);
+        } else {
+            editor.setScrollTop(editor.getScrollTop() + event.deltaY);
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
     useEffect(() => {
         if (!editorRef.current) {
             return;
@@ -101,6 +131,18 @@ const BattleRoom = ({
             }
         });
     }, [isEnded, status]);
+
+    useEffect(() => {
+        if (!editorRef.current) {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            editorRef.current?.layout();
+            editorRef.current?.setScrollTop(0);
+            editorRef.current?.setScrollLeft(0);
+        });
+    }, [language, activeProblemId]);
 
     const handleEditorMount: OnMount = (editorInstance) => {
         editorRef.current = editorInstance;
@@ -132,6 +174,32 @@ const BattleRoom = ({
                             </Badge>
                         </div>
                     </div>
+
+                    {problems.length > 1 ? (
+                        <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Problems</p>
+                            <div className="flex flex-wrap gap-2">
+                                {problems.map((problemItem, index) => {
+                                    const isActive = problemItem.id === activeProblemId;
+                                    return (
+                                        <button
+                                            key={problemItem.id}
+                                            type="button"
+                                            onClick={() => onActiveProblemChange(problemItem.id)}
+                                            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+                                                isActive
+                                                    ? 'border-primary-blue/55 bg-primary-blue/20 text-primary-cyan'
+                                                    : 'border-border bg-card/70 text-muted hover:border-primary-blue/45 hover:text-gray-700'
+                                            }`}
+                                            disabled={isSubmitting || isEnded}
+                                        >
+                                            Q{index + 1}: {problemItem.title}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : null}
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                         <div className="rounded-xl border border-border bg-card/70 p-3">
@@ -177,6 +245,7 @@ const BattleRoom = ({
                                 disabled={isSubmitting || isEnded}
                             >
                                 <option value="javascript">JavaScript</option>
+                                <option value="cpp">C++</option>
                             </select>
 
                             <Button
@@ -192,22 +261,45 @@ const BattleRoom = ({
                         </div>
                     </div>
 
-                    <div ref={editorContainerRef} className="h-[420px] min-h-[360px] bg-background">
-                        {fallbackEditorEnabled ? (
+                    <div className="border-b border-border bg-card/75 px-4 py-2 text-xs text-muted">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <span className="rounded-md border border-primary-blue/45 bg-primary-blue/10 px-2 py-1 font-semibold text-primary-cyan">
+                                    {language === 'cpp' || language === 'c++' ? 'main.cpp' : 'main.js'}
+                                </span>
+                                <span>{isEnded ? 'Read-only mode' : 'Live submission mode'}</span>
+                            </div>
+                            <span>{problem?.difficulty || 'Challenge'} difficulty</span>
+                        </div>
+                    </div>
+
+                    <div
+                        ref={editorContainerRef}
+                        onWheelCapture={handleEditorWheelCapture}
+                        className="h-[420px] min-h-[360px] bg-background"
+                    >
+                        {showFallbackEditor ? (
                             <textarea
                                 value={code}
                                 onChange={(event) => onCodeChange(event.target.value)}
                                 readOnly={isEnded}
-                                className="h-full w-full resize-none border-0 bg-background p-4 font-code text-sm leading-6 text-gray-100 focus:outline-none"
+                                className="h-full w-full resize-none overflow-auto border-0 bg-background p-4 font-code text-sm leading-6 text-gray-100 focus:outline-none"
                                 spellCheck={false}
                             />
                         ) : (
                             <Editor
+                                key={`battle-editor-${activeProblemId}-${language}`}
                                 height="100%"
-                                language="javascript"
+                                path={language === 'cpp' || language === 'c++' ? 'main.cpp' : 'main.js'}
+                                language={language === 'cpp' || language === 'c++' ? 'cpp' : 'javascript'}
                                 value={code}
                                 onMount={handleEditorMount}
-                                onChange={(value) => onCodeChange(value || '')}
+                                onChange={(value) => {
+                                    if (typeof value !== 'string') {
+                                        return;
+                                    }
+                                    onCodeChange(value);
+                                }}
                                 loading={
                                     <div className="flex h-full items-center justify-center text-sm text-muted">
                                         Loading editor...
@@ -220,12 +312,41 @@ const BattleRoom = ({
                                     lineNumbers: 'on',
                                     fontSize: 14,
                                     scrollBeyondLastLine: false,
+                                    scrollbar: {
+                                        vertical: 'visible',
+                                        horizontal: 'visible',
+                                        verticalScrollbarSize: 10,
+                                        horizontalScrollbarSize: 10,
+                                        alwaysConsumeMouseWheel: true,
+                                        handleMouseWheel: true,
+                                        useShadows: false,
+                                    },
+                                    mouseWheelScrollSensitivity: 1,
+                                    fastScrollSensitivity: 5,
+                                    overviewRulerLanes: 0,
+                                    wordWrap: 'off',
                                     fontFamily: 'JetBrains Mono, Fira Code, monospace',
+                                    renderLineHighlight: 'all',
+                                    smoothScrolling: true,
+                                    cursorBlinking: 'expand',
                                     padding: { top: 10, bottom: 12 },
                                     readOnly: isEnded,
                                 }}
                             />
                         )}
+                    </div>
+
+                    <div className="flex items-center justify-between bg-surface/65 px-4 py-2 text-xs text-muted">
+                        <div className="flex items-center gap-3">
+                            <span>{(code.match(/\n/g)?.length || 0) + 1} lines</span>
+                            <span>{code.length} chars</span>
+                            {showFallbackEditor ? (
+                                <span className="rounded-md border border-warning/35 bg-warning/15 px-2 py-1 text-warning">
+                                    Fallback editor
+                                </span>
+                            ) : null}
+                        </div>
+                        <span>Synced locally</span>
                     </div>
                 </Card>
 
@@ -265,6 +386,28 @@ const BattleRoom = ({
                     status={status}
                     onElapsed={onTimerElapsed}
                 />
+
+                {currentUserEntry ? (
+                    <Card variant="layered" className="space-y-2">
+                        <h3 className="typ-h3 !mb-0 !text-base">Your Battle Stats</h3>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                            <div className="rounded-lg border border-border bg-card/70 px-3 py-2">
+                                <p className="text-xs text-muted">Rank</p>
+                                <p className="font-semibold text-gray-900">#{currentUserEntry.rank}</p>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card/70 px-3 py-2">
+                                <p className="text-xs text-muted">Score</p>
+                                <p className="font-semibold text-primary-cyan">{currentUserEntry.score}</p>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card/70 px-3 py-2">
+                                <p className="text-xs text-muted">Solved</p>
+                                <p className="font-semibold text-gray-900">
+                                    {currentUserEntry.solvedProblems}/{currentUserEntry.totalProblems}
+                                </p>
+                            </div>
+                        </div>
+                    </Card>
+                ) : null}
 
                 <div className="min-h-0 flex-1">
                     <LiveLeaderboard

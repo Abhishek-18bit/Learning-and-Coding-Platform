@@ -12,6 +12,8 @@ export interface StatSectionItem {
     icon: ReactNode;
     tone: StatTone;
     suffix?: string;
+    trend?: string;
+    subLabel?: string;
 }
 
 interface StatSectionProps {
@@ -29,6 +31,8 @@ const StatSection = ({ items }: StatSectionProps) => {
                         icon={stat.icon}
                         tone={stat.tone}
                         suffix={stat.suffix}
+                        trend={stat.trend}
+                        subLabel={stat.subLabel}
                     />
                 </motion.div>
             ))}

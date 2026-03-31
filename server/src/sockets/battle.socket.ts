@@ -44,6 +44,7 @@ type StartBattlePayload = {
 
 type SubmitAttemptPayload = {
     roomId?: string;
+    problemId?: string;
     code?: string;
     language?: string;
     userId?: string;
@@ -82,18 +83,24 @@ const resolveJwtFromSocket = (socket: BattleSocket): SocketJwtPayload | null => 
 };
 
 const resolveUserId = (socket: BattleSocket, fallbackUserId?: unknown): string => {
-    if (socket.data.userId) {
-        return socket.data.userId;
-    }
-
     const decoded = resolveJwtFromSocket(socket);
     if (decoded?.id) {
+        const fallback = typeof fallbackUserId === 'string' ? fallbackUserId.trim() : '';
+        if (fallback && fallback !== decoded.id) {
+            throw new ApiError(401, 'Socket identity mismatch');
+        }
         socket.data.userId = decoded.id;
         return decoded.id;
     }
 
     if (typeof fallbackUserId === 'string' && fallbackUserId.trim()) {
-        return fallbackUserId.trim();
+        const userId = fallbackUserId.trim();
+        socket.data.userId = userId;
+        return userId;
+    }
+
+    if (socket.data.userId) {
+        return socket.data.userId;
     }
 
     throw new ApiError(401, 'Unauthorized socket request');
@@ -181,6 +188,7 @@ export const registerBattleSocketHandlers = (io: Server) => {
 
                 const result = await BattleService.submitBattleAttempt({
                     roomId,
+                    problemId: typeof payload.problemId === 'string' ? payload.problemId : undefined,
                     userId,
                     code: String(payload.code || ''),
                     language: String(payload.language || ''),
@@ -188,8 +196,10 @@ export const registerBattleSocketHandlers = (io: Server) => {
 
                 socket.emit(SOCKET_EVENTS.submissionResult, {
                     roomId,
+                    problemId: result.problemId,
                     submission: {
                         id: result.submission.id,
+                        problemId: result.submission.problemId,
                         attemptNumber: result.submission.attemptNumber,
                         isCorrect: result.submission.isCorrect,
                         timeTaken: result.submission.timeTaken,

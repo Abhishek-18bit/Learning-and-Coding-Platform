@@ -7,6 +7,7 @@ This project consists of a Node.js/Express backend (server) and a React/Vite fro
 - Node.js (v18+ recommended)
 - npm or yarn
 - PostgreSQL database (Neon recommended)
+- C++ compiler for C++ submissions (`g++` or `clang++`) if you want C++ execution
 
 ## 1. Backend Setup (Server)
 

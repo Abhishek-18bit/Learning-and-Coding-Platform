@@ -14,9 +14,9 @@ const mergeClasses = (...classes: Array<string | undefined | false>) =>
     classes.filter(Boolean).join(' ');
 
 const variantClasses: Record<CardVariant, string> = {
-    default: 'bg-card border border-border shadow-soft',
-    glass: 'bg-surface/70 border border-border backdrop-blur-xl shadow-soft',
-    layered: 'bg-card border border-border shadow-medium',
+    default: 'bg-card/90 border border-border shadow-soft',
+    glass: 'bg-surface/72 border border-border backdrop-blur-xl shadow-soft',
+    layered: 'bg-surface/70 border border-border shadow-soft',
 };
 
 const Card = ({
@@ -64,8 +64,6 @@ const Card = ({
 
         element.style.setProperty('--card-rotate-x', `${rotateX.toFixed(2)}deg`);
         element.style.setProperty('--card-rotate-y', `${rotateY.toFixed(2)}deg`);
-        element.style.setProperty('--card-glow-x', `${(offsetX * 100).toFixed(1)}%`);
-        element.style.setProperty('--card-glow-y', `${(offsetY * 100).toFixed(1)}%`);
     };
 
     const resetTiltValues = () => {
@@ -76,8 +74,6 @@ const Card = ({
 
         element.style.setProperty('--card-rotate-x', '0deg');
         element.style.setProperty('--card-rotate-y', '0deg');
-        element.style.setProperty('--card-glow-x', '50%');
-        element.style.setProperty('--card-glow-y', '50%');
     };
 
     const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
@@ -97,7 +93,7 @@ const Card = ({
                 'relative overflow-hidden rounded-xl p-6 transition-all dur-normal',
                 variantClasses[variant],
                 isTiltEnabled ? 'card-tilt' : '',
-                hoverLift ? 'card-hover-lift hover:shadow-strong' : '',
+                hoverLift ? 'card-hover-lift hover:shadow-medium' : '',
                 className
             )}
             onMouseMove={handleMouseMove}

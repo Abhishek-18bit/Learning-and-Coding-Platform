@@ -24,7 +24,7 @@ const LiveLeaderboard = ({
         [entries]
     );
 
-    const winnerId = renderedEntries.find((entry) => entry.isCorrect)?.userId || renderedEntries[0]?.userId;
+    const winnerId = renderedEntries[0]?.userId;
 
     return (
         <Card variant="glass" className="h-full min-h-0 p-0">
@@ -42,11 +42,13 @@ const LiveLeaderboard = ({
             </div>
 
             <div className="max-h-[480px] overflow-auto">
-                <table className="w-full min-w-[520px] border-collapse">
+                <table className="w-full min-w-[700px] border-collapse">
                     <thead className="sticky top-0 bg-card/95 backdrop-blur-md">
                         <tr className="border-b border-border/80 text-left text-xs uppercase tracking-wide text-muted">
                             <th className="px-3 py-2 font-semibold">Rank</th>
                             <th className="px-3 py-2 font-semibold">Participant</th>
+                            <th className="px-3 py-2 font-semibold">Score</th>
+                            <th className="px-3 py-2 font-semibold">Penalty</th>
                             <th className="px-3 py-2 font-semibold">Time</th>
                             <th className="px-3 py-2 font-semibold">Attempts</th>
                             <th className="px-3 py-2 font-semibold">Status</th>

@@ -22,12 +22,15 @@ const ResultScreen = ({
     currentUserId,
     onReturn,
 }: ResultScreenProps) => {
-    const winner = leaderboard.find((entry) => entry.isCorrect) || leaderboard[0];
+    const winner = leaderboard[0];
 
     const summary = useMemo(() => {
         const solvedRows = leaderboard.filter((entry) => entry.isCorrect);
         const solvedCount = solvedRows.length;
         const solveRate = participantCount > 0 ? Math.round((solvedCount / participantCount) * 100) : 0;
+        const averageScore = leaderboard.length
+            ? Math.round(leaderboard.reduce((acc, row) => acc + row.score, 0) / leaderboard.length)
+            : 0;
         const avgSolveTimeMs = solvedRows.length
             ? Math.round(
                   solvedRows.reduce((acc, row) => acc + (row.timeTaken || 0), 0) / solvedRows.length
@@ -37,6 +40,7 @@ const ResultScreen = ({
         return {
             solvedCount,
             solveRate,
+            averageScore,
             avgSolveTimeMs,
         };
     }, [leaderboard, participantCount]);
@@ -84,14 +88,21 @@ const ResultScreen = ({
                         <div className="rounded-xl border border-border bg-card/75 px-4 py-3">
                             <p className="inline-flex items-center gap-1 text-xs uppercase tracking-wide text-muted">
                                 <Gauge size={12} />
-                                Avg Solve
+                                Avg Score
                             </p>
-                            <p className="text-xl font-bold text-gray-900">
-                                {summary.avgSolveTimeMs ? `${(summary.avgSolveTimeMs / 1000).toFixed(2)}s` : '--'}
-                            </p>
+                            <p className="text-xl font-bold text-gray-900">{summary.averageScore}</p>
                         </div>
                     </div>
                 </div>
+            </Card>
+
+            <Card variant="layered" className="!py-4">
+                <p className="text-sm text-muted">
+                    Scoring: difficulty-weighted solve points + speed bonus, with penalties for wrong attempts.
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                    Tie-breakers: lower penalty time, fewer attempts, then earlier submission.
+                </p>
             </Card>
 
             <div className="h-[540px]">

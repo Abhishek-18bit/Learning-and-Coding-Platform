@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Sparkles } from 'lucide-react';
+import { FileText, Radar, Sparkles, TriangleAlert } from 'lucide-react';
 import GenerateFromPDFModal from '../components/GenerateFromPDFModal';
 import { useAuth } from '../contexts/AuthContext';
 import { materialService, type Material } from '../services/material.service';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
 
 const PDFAIQuizPage = () => {
     const { courseId } = useParams<{ courseId: string }>();
@@ -22,7 +25,7 @@ const PDFAIQuizPage = () => {
     if (loading) {
         return (
             <div className="h-[60vh] flex items-center justify-center">
-                <div className="text-secondary font-medium">Loading...</div>
+                <div className="typ-muted font-medium">Loading...</div>
             </div>
         );
     }
@@ -33,62 +36,89 @@ const PDFAIQuizPage = () => {
     const pdfMaterials = (materials || []).filter((material) => material.fileType === 'application/pdf');
 
     return (
-        <div className="max-w-5xl mx-auto space-y-6">
-            <div className="space-y-2">
-                <Link to={`/app/course/${courseId}/quiz/create`} className="text-xs font-bold uppercase tracking-widest text-primary hover:underline">
-                    Back to Quiz Creation Options
-                </Link>
-                <h1 className="text-3xl font-bold font-headlines text-gray-900">Generate from PDF (AI)</h1>
-                <p className="text-secondary">Choose a PDF material to generate a quiz draft.</p>
-            </div>
+        <div className="mission-page">
+            <section className="mission-shell p-6 lg:p-7">
+                <div className="mission-shell-content flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <Link
+                            to={`/app/course/${courseId}/quiz/create`}
+                            className="text-xs font-bold uppercase tracking-widest text-primary-cyan hover:underline"
+                        >
+                            Back to Quiz Creation Options
+                        </Link>
+                        <h1 className="mission-title mt-3">Generate from PDF (AI)</h1>
+                        <p className="mission-subtitle">Choose a course PDF and generate a quiz draft with explanations.</p>
+                    </div>
 
-            <div className="rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-xs text-yellow-700">
-                Large PDFs can take longer to process and may timeout. Text-based PDFs generally work best.
-            </div>
-
-            {isLoading && (
-                <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-secondary">
-                    Loading materials...
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="mission-chip">
+                            <FileText size={13} />
+                            {pdfMaterials.length} PDF materials
+                        </span>
+                        <span className="mission-chip">
+                            <Radar size={13} />
+                            AI extraction enabled
+                        </span>
+                    </div>
                 </div>
-            )}
+            </section>
 
-            {isError && (
-                <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+            <Card variant="layered" className="border border-warning/35 bg-warning/15 px-4 py-3 text-xs text-warning">
+                <p className="inline-flex items-center gap-2">
+                    <TriangleAlert size={14} />
+                    Large PDFs may take longer and can timeout. Text-based PDFs generally work best.
+                </p>
+            </Card>
+
+            {isLoading ? (
+                <Card variant="layered" className="p-8 text-center">
+                    <p className="typ-muted">Loading materials...</p>
+                </Card>
+            ) : null}
+
+            {isError ? (
+                <Card variant="layered" className="border border-error/35 bg-error/15 p-4 text-sm text-error">
                     Failed to load materials.
-                </div>
-            )}
+                </Card>
+            ) : null}
 
-            {!isLoading && pdfMaterials.length === 0 && (
-                <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-secondary">
-                    No PDF materials available for this course.
-                </div>
-            )}
+            {!isLoading && pdfMaterials.length === 0 ? (
+                <Card variant="layered" className="p-10 text-center">
+                    <p className="typ-muted">No PDF materials available for this course.</p>
+                </Card>
+            ) : null}
 
             <div className="space-y-3">
                 {pdfMaterials.map((material) => (
-                    <div key={material.id} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-soft flex items-center justify-between gap-4">
-                        <div className="space-y-1">
-                            <h3 className="font-bold text-gray-900">{material.title}</h3>
-                            <p className="text-xs text-secondary">
-                                Uploaded {new Date(material.createdAt).toLocaleDateString()}
-                            </p>
-                        </div>
+                    <Card key={material.id} variant="glass" className="p-4" hoverLift>
+                        <div className="flex items-center justify-between gap-3">
+                            <div>
+                                <p className="text-sm font-semibold text-gray-900">{material.title}</p>
+                                <p className="text-xs text-muted">
+                                    Uploaded {new Date(material.createdAt).toLocaleDateString()}
+                                </p>
+                            </div>
 
-                        <button
-                            onClick={() => {
-                                setSelectedMaterial(material);
-                                setIsModalOpen(true);
-                            }}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold text-xs uppercase tracking-wider hover:bg-primary/15"
-                        >
-                            <Sparkles size={14} />
-                            Generate Quiz
-                        </button>
-                    </div>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="primary">PDF</Badge>
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                        setSelectedMaterial(material);
+                                        setIsModalOpen(true);
+                                    }}
+                                >
+                                    <Sparkles size={14} />
+                                    Generate Quiz
+                                </Button>
+                            </div>
+                        </div>
+                    </Card>
                 ))}
             </div>
 
-            {selectedMaterial && (
+            {selectedMaterial ? (
                 <GenerateFromPDFModal
                     isOpen={isModalOpen}
                     material={selectedMaterial}
@@ -99,7 +129,7 @@ const PDFAIQuizPage = () => {
                     }}
                     onSaved={(quizId) => navigate(`/app/quizzes/${quizId}/manage`)}
                 />
-            )}
+            ) : null}
         </div>
     );
 };

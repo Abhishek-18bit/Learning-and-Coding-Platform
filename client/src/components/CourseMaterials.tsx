@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { materialService, type Material } from '../services/material.service';
-import { FileText, Upload, Trash2, Download, Loader2, Sparkles } from 'lucide-react';
+import { Download, FileText, Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { materialService, type Material } from '../services/material.service';
 import { useAuth } from '../contexts/AuthContext';
+import Card from './ui/Card';
+import Badge from './ui/Badge';
 import GenerateFromPDFModal from './GenerateFromPDFModal';
 
 interface CourseMaterialsProps {
@@ -27,7 +29,7 @@ const CourseMaterials = ({ courseId, isTeacher }: CourseMaterialsProps) => {
     const { data: materials, isLoading } = useQuery({
         queryKey: ['materials', courseId],
         queryFn: () => materialService.getByCourseId(courseId),
-        enabled: !!courseId,
+        enabled: Boolean(courseId),
     });
 
     const uploadMutation = useMutation({
@@ -59,28 +61,28 @@ const CourseMaterials = ({ courseId, isTeacher }: CourseMaterialsProps) => {
         },
     });
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            handleUpload(e.target.files[0]);
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (event.target.files && event.target.files[0]) {
+            handleUpload(event.target.files[0]);
         }
     };
 
-    const handleDrag = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.type === 'dragenter' || e.type === 'dragover') {
+    const handleDrag = (event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === 'dragenter' || event.type === 'dragover') {
             setDragActive(true);
-        } else if (e.type === 'dragleave') {
+        } else if (event.type === 'dragleave') {
             setDragActive(false);
         }
     };
 
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
+    const handleDrop = (event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
         setDragActive(false);
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleUpload(e.dataTransfer.files[0]);
+        if (event.dataTransfer.files && event.dataTransfer.files[0]) {
+            handleUpload(event.dataTransfer.files[0]);
         }
     };
 
@@ -96,33 +98,45 @@ const CourseMaterials = ({ courseId, isTeacher }: CourseMaterialsProps) => {
         uploadMutation.mutate({ file, title: file.name });
     };
 
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
     if (isLoading) {
         return (
-            <div className="card-premium p-6 space-y-4">
-                <h3 className="text-xl font-bold font-headlines">Course Materials</h3>
-                <div className="flex justify-center p-4">
+            <Card variant="layered" className="mission-card-section">
+                <div>
+                    <p className="mission-panel-title">Course Materials</p>
+                    <h3 className="typ-h3 !text-xl mb-0 mt-2">Learning resources</h3>
+                </div>
+                <div className="h-24 flex items-center justify-center">
                     <Loader2 className="animate-spin text-primary" />
                 </div>
-            </div>
+            </Card>
         );
     }
 
     return (
-        <div className="card-premium space-y-6">
-            <h3 className="text-xl font-bold font-headlines">Course Materials</h3>
+        <Card variant="layered" className="mission-card-section">
+            <div className="flex items-center justify-between gap-3">
+                <div>
+                    <p className="mission-panel-title">Course Materials</p>
+                    <h3 className="typ-h3 !text-xl mb-0 mt-2">Learning resources</h3>
+                </div>
+                <Badge variant="muted">{materials?.length || 0} files</Badge>
+            </div>
 
-            {error && (
-                <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-100">
+            {error ? (
+                <div className="rounded-xl border border-error/35 bg-error/15 px-3 py-2 text-sm text-error">
                     {error}
                 </div>
-            )}
+            ) : null}
 
-            {isTeacher && (
+            {isTeacher ? (
                 <div
-                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${dragActive ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'
-                        }`}
+                    className={`rounded-xl border-2 border-dashed p-5 text-center transition dur-fast ${
+                        dragActive
+                            ? 'border-primary-blue/55 bg-primary-blue/12'
+                            : 'border-border bg-card/70 hover:border-primary-blue/35'
+                    }`}
                     onDragEnter={handleDrag}
                     onDragLeave={handleDrag}
                     onDragOver={handleDrag}
@@ -131,83 +145,85 @@ const CourseMaterials = ({ courseId, isTeacher }: CourseMaterialsProps) => {
                     {uploading ? (
                         <div className="space-y-3">
                             <Loader2 className="mx-auto animate-spin text-primary" />
-                            <div className="text-sm font-medium text-secondary">Uploading... {progress}%</div>
+                            <p className="text-sm text-muted">Uploading... {progress}%</p>
                             <progress className="progress-base w-full h-1.5" value={progress} max={100} />
                         </div>
                     ) : (
                         <label className="cursor-pointer block">
-                            <input
-                                type="file"
-                                accept=".pdf"
-                                className="hidden"
-                                onChange={handleFileChange}
-                            />
-                            <Upload className="mx-auto text-primary mb-2" size={24} />
-                            <p className="font-bold text-gray-900">Upload PDF</p>
-                            <p className="text-xs text-secondary mt-1">Drag & drop or click to browse</p>
+                            <input type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
+                            <Upload className="mx-auto text-primary-cyan mb-2" size={22} />
+                            <p className="text-sm font-semibold text-gray-900">Upload PDF</p>
+                            <p className="text-xs text-muted mt-1">Drag and drop or click to browse</p>
                         </label>
                     )}
                 </div>
-            )}
+            ) : null}
 
-            <div className="space-y-3">
+            <div className="space-y-2">
                 {materials && materials.length > 0 ? (
                     materials.map((material: Material) => (
-                        <div key={material.id} className="group flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-white hover:shadow-sm border border-transparent hover:border-gray-100 transition-all">
-                            <div className="flex items-center gap-3 overflow-hidden">
-                                <div className="p-2 bg-red-100 text-red-600 rounded-lg">
-                                    <FileText size={18} />
-                                </div>
-                                <div className="truncate">
-                                    <h4 className="font-bold text-sm text-gray-900 truncate" title={material.title}>
+                        <div
+                            key={material.id}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card/70 px-3 py-3"
+                        >
+                            <div className="flex min-w-0 items-center gap-3">
+                                <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-error/15 text-error">
+                                    <FileText size={17} />
+                                </span>
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-gray-900" title={material.title}>
                                         {material.title}
-                                    </h4>
-                                    <p className="text-[10px] text-secondary">
+                                    </p>
+                                    <p className="text-[11px] text-muted">
                                         {new Date(material.createdAt).toLocaleDateString()}
                                     </p>
                                 </div>
                             </div>
+
                             <div className="flex items-center gap-2">
                                 <a
-                                    href={`${API_URL}/${material.fileUrl.replace(/\\/g, '/')}`}
+                                    href={`${apiUrl}/${material.fileUrl.replace(/\\/g, '/')}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="p-1.5 text-secondary hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                                    title="Download/View"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-muted hover:text-gray-700"
+                                    title="Download / View"
                                 >
-                                    <Download size={16} />
+                                    <Download size={15} />
                                 </a>
-                                {isTeacherRole && material.fileType === 'application/pdf' && (
+
+                                {isTeacherRole && material.fileType === 'application/pdf' ? (
                                     <button
                                         onClick={() => {
                                             setSelectedMaterial(material);
                                             setShowGenerateModal(true);
                                         }}
-                                        className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 hover:bg-primary/15 rounded-lg transition-colors inline-flex items-center gap-1"
+                                        className="inline-flex items-center gap-1 rounded-lg border border-primary-blue/40 bg-primary-blue/12 px-2.5 py-1.5 text-[11px] font-semibold text-primary-cyan"
                                         title="Generate Quiz from PDF"
                                     >
                                         <Sparkles size={12} />
-                                        Generate Quiz
+                                        Generate
                                     </button>
-                                )}
-                                {isTeacher && (
+                                ) : null}
+
+                                {isTeacher ? (
                                     <button
                                         onClick={() => deleteMutation.mutate(material.id)}
-                                        className="p-1.5 text-secondary hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-muted hover:text-error"
                                         title="Delete"
                                     >
-                                        <Trash2 size={16} />
+                                        <Trash2 size={15} />
                                     </button>
-                                )}
+                                ) : null}
                             </div>
                         </div>
                     ))
                 ) : (
-                    <p className="text-center text-sm text-secondary italic py-4">
+                    <div className="rounded-xl border border-border bg-card/70 px-4 py-8 text-center text-sm text-muted">
                         No materials uploaded yet.
-                    </p>
+                    </div>
                 )}
             </div>
+
             <GenerateFromPDFModal
                 isOpen={showGenerateModal}
                 material={selectedMaterial}
@@ -218,7 +234,7 @@ const CourseMaterials = ({ courseId, isTeacher }: CourseMaterialsProps) => {
                 }}
                 onSaved={(quizId) => navigate(`/app/quizzes/${quizId}/manage`)}
             />
-        </div>
+        </Card>
     );
 };
 

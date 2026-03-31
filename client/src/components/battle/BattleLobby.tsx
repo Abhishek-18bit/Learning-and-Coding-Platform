@@ -60,15 +60,20 @@ const BattleLobby = ({
                             participants.map((entry) => (
                                 <div
                                     key={entry.userId}
-                                    className="flex items-center justify-between rounded-xl border border-border bg-card/70 px-3 py-2"
+                                    className="rounded-xl border border-border bg-card/70 px-3 py-2"
                                 >
-                                    <div className="inline-flex items-center gap-2">
-                                        <span className="h-2.5 w-2.5 rounded-full bg-primary-cyan" />
-                                        <span className="font-medium text-gray-800">{entry.name}</span>
+                                    <div className="flex items-center justify-between">
+                                        <div className="inline-flex items-center gap-2">
+                                            <span className="h-2.5 w-2.5 rounded-full bg-primary-cyan" />
+                                            <span className="font-medium text-gray-800">{entry.name}</span>
+                                        </div>
+                                        <Badge variant={entry.attemptNumber > 0 ? 'warning' : 'muted'}>
+                                            {entry.attemptNumber > 0 ? `${entry.score} pts` : 'Waiting'}
+                                        </Badge>
                                     </div>
-                                    <Badge variant={entry.attemptNumber > 0 ? 'warning' : 'muted'}>
-                                        {entry.attemptNumber > 0 ? `${entry.attemptNumber} attempts` : 'Waiting'}
-                                    </Badge>
+                                    <p className="mt-1 text-xs text-muted">
+                                        {entry.solvedProblems}/{entry.totalProblems} solved
+                                    </p>
                                 </div>
                             ))
                         ) : (

@@ -13,6 +13,7 @@ export class BattleController {
             const room = await BattleService.createRoom({
                 teacherId: req.user.id,
                 problemId: req.body.problemId,
+                problemIds: req.body.problemIds,
                 duration: req.body.duration,
                 maxParticipants: req.body.maxParticipants,
             });
@@ -53,7 +54,7 @@ export class BattleController {
             }
 
             const roomId = String(req.params.roomId);
-            const room = await BattleService.endRoom(roomId, req.user.id);
+            const room = await BattleService.endRoom(roomId, req.user.id, req.body.reason);
 
             res.status(200).json({
                 success: true,

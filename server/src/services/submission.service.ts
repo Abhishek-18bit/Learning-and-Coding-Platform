@@ -4,6 +4,7 @@ import { ApiError } from '../utils/errors';
 import { ExecutionEngineService, type ExecutionSummary } from './execution-engine.service';
 import { ProblemProgressService } from './problem-progress.service';
 import { ProblemService } from './problem.service';
+import { AchievementService } from './achievement.service';
 
 export class SubmissionService {
     static async create(data: { studentId: string; problemId: string; code: string; language: string }): Promise<Submission> {
@@ -92,9 +93,54 @@ export class SubmissionService {
             summary.finalVerdict === SubmissionStatus.ACCEPTED
         );
 
+        try {
+            await AchievementService.onProblemSubmissionEvaluated({
+                userId: data.studentId,
+                finalVerdict: summary.finalVerdict,
+            });
+        } catch (error) {
+            console.error('Failed to evaluate problem submission achievements:', error);
+        }
+
         return {
             submission: updatedSubmission,
             summary,
+        };
+    }
+
+    static async runCustomInput(data: {
+        problemId: string;
+        code: string;
+        language: string;
+        input: string;
+        expectedOutput?: string;
+    }) {
+        const problem = await ProblemService.findById(data.problemId);
+        if (!problem) {
+            throw new ApiError(404, 'Problem not found');
+        }
+
+        const result = await ExecutionEngineService.runCustomInput({
+            code: data.code,
+            language: data.language,
+            input: data.input,
+        });
+
+        const normalizedExpected = typeof data.expectedOutput === 'string'
+            ? data.expectedOutput.replace(/\r/g, '').trim()
+            : null;
+        const normalizedActual = result.output.replace(/\r/g, '').trim();
+
+        const hasExpectedOutput = normalizedExpected !== null && normalizedExpected.length > 0;
+        const isMatch = hasExpectedOutput ? normalizedActual === normalizedExpected : null;
+
+        return {
+            output: result.output,
+            executionTime: result.executionTime,
+            status: result.status,
+            error: result.error,
+            expectedOutput: hasExpectedOutput ? data.expectedOutput : null,
+            isMatch,
         };
     }
 }

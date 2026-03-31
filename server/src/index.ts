@@ -18,13 +18,10 @@ import interviewRoutes from './routes/interview.routes';
 import materialRoutes from './routes/material.routes';
 import battleRoutes from './routes/battle.routes';
 import chatRoutes from './routes/chat.routes';
+import achievementRoutes from './routes/achievement.routes';
 import { handleError } from './utils/errors';
 import { initSocket } from './utils/socket';
 import { BattleService } from './services/battle.service';
-
-
-//import { BattleService } from './services/battle.service';
-
 
 const app: Express = express();
 const httpServer = createServer(app);
@@ -50,6 +47,7 @@ app.use('/api/interviews', interviewRoutes);
 app.use('/api/materials', materialRoutes);
 app.use('/api/battle', battleRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/achievements', achievementRoutes);
 
 app.get('/health', async (_req: Request, res: Response) => {
     try {

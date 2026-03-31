@@ -17,11 +17,18 @@ const formatTime = (timeTaken: number | null) => {
     return `${(timeTaken / 1000).toFixed(2)}s`;
 };
 
+const formatPenalty = (penaltyTimeMs: number | null) => {
+    if (penaltyTimeMs === null || Number.isNaN(penaltyTimeMs)) {
+        return '--';
+    }
+    return `${(penaltyTimeMs / 1000).toFixed(1)}s`;
+};
+
 const statusVariant = (entry: BattleLeaderboardEntry): 'success' | 'warning' | 'muted' => {
     if (entry.isCorrect) {
         return 'success';
     }
-    if (entry.attemptNumber > 0) {
+    if (entry.solvedProblems > 0 || entry.attemptNumber > 0) {
         return 'warning';
     }
     return 'muted';
@@ -61,10 +68,18 @@ const LeaderboardRow = ({ entry, isCurrentUser, isWinner, isEnded }: Leaderboard
                     {isWinner && isEnded ? <Badge variant="success">Winner</Badge> : null}
                 </div>
             </td>
+            <td className="px-3 py-3 font-semibold text-primary-cyan">{entry.score}</td>
+            <td className="px-3 py-3 font-medium text-gray-700">{formatPenalty(entry.penaltyTimeMs)}</td>
             <td className="px-3 py-3 font-medium text-gray-700">{formatTime(entry.timeTaken)}</td>
-            <td className="px-3 py-3 font-medium text-gray-700">{entry.attemptNumber}</td>
+            <td className="px-3 py-3 font-medium text-gray-700">
+                {entry.attemptNumber}
+                <span className="ml-1 text-xs text-muted">({entry.wrongAttempts} wrong)</span>
+            </td>
             <td className="px-3 py-3">
                 <Badge variant={statusVariant(entry)}>{statusLabel(entry)}</Badge>
+                <p className="mt-1 text-xs text-muted">
+                    {entry.solvedProblems}/{entry.totalProblems} solved
+                </p>
             </td>
         </motion.tr>
     );

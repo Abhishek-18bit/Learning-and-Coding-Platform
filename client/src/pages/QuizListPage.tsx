@@ -1,11 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardCheck, Clock, Trophy, ArrowRight, Loader2, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { ArrowRight, BookOpen, ClipboardCheck, Clock, Loader2, Radar, Trophy } from 'lucide-react';
 import { quizService } from '../services/quiz.service';
 import { dashboardService } from '../services/dashboard.service';
 import { fadeIn, staggerContainer } from '../animations/variants';
 import { useAuth } from '../contexts/AuthContext';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
 
 const QuizListPage = () => {
     const navigate = useNavigate();
@@ -13,7 +16,7 @@ const QuizListPage = () => {
 
     const { data: quizzes, isLoading, isError } = useQuery({
         queryKey: ['quizzes', 'available', user?.id, user?.role],
-        enabled: !!user,
+        enabled: Boolean(user),
         queryFn: async () => {
             if (!user) return [];
 
@@ -55,102 +58,124 @@ const QuizListPage = () => {
                 }))
                 .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
         },
-        retry: false
+        retry: false,
     });
 
     if (isLoading) {
         return (
             <div className="h-[60vh] flex flex-col items-center justify-center space-y-4 text-center">
                 <Loader2 className="w-12 h-12 text-primary animate-spin" />
-                <p className="text-secondary font-medium">Loading available quizzes...</p>
+                <p className="typ-muted font-medium">Loading available quizzes...</p>
             </div>
         );
     }
 
+    const totalQuizzes = quizzes?.length || 0;
+    const totalMarks = (quizzes || []).reduce((sum, quiz) => sum + (quiz.totalMarks || 0), 0);
+
     return (
-        <motion.div
-            initial="hidden"
-            animate="visible"
-            variants={staggerContainer}
-            className="space-y-10"
-        >
-            <motion.div variants={fadeIn}>
-                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Available Quizzes</h1>
-                <p className="text-secondary mt-1">Test your knowledge and earn marks to measure your progress.</p>
-            </motion.div>
-
-            <motion.div
-                variants={staggerContainer}
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
-            >
-                {quizzes?.map((quiz) => (
-                    <motion.div
-                        key={quiz.id}
-                        variants={fadeIn}
-                        whileHover={{ y: -5 }}
-                        className="card-premium group hover:border-primary/20 transition-all flex flex-col h-full"
-                    >
-                        <div className="flex items-start justify-between mb-6">
-                            <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                                <ClipboardCheck size={28} />
-                            </div>
-                            <span className="px-3 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-bold uppercase tracking-widest">
-                                Active
-                            </span>
-                        </div>
-
-                        <h3 className="text-xl font-bold text-gray-900 group-hover:text-primary transition-colors leading-tight mb-2">
-                            {quiz.title}
-                        </h3>
-                        <p className="text-xs text-secondary font-semibold">{(quiz as any).courseTitle}</p>
-
-                        <div className="flex-grow space-y-4 pt-4 border-t border-gray-50">
-                            <div className="flex items-center gap-6">
-                                <div className="flex items-center gap-2 text-secondary">
-                                    <Clock size={16} />
-                                    <span className="text-sm font-medium">{quiz.timeLimit} Mins</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-secondary">
-                                    <Trophy size={16} />
-                                    <span className="text-sm font-medium">{quiz.totalMarks} Marks</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={() => navigate(`/app/quiz/${quiz.id}`)}
-                            className="mt-8 w-full py-4 bg-gray-50 group-hover:bg-primary group-hover:text-white rounded-xl font-bold text-gray-900 transition-all flex items-center justify-center gap-2"
-                        >
-                            Start Assessment
-                            <ArrowRight size={18} />
-                        </button>
-                    </motion.div>
-                ))}
-
-                {(!quizzes || quizzes.length === 0) && (
-                    <motion.div variants={fadeIn} className="col-span-full card-premium p-20 text-center space-y-6">
-                        <BookOpen size={64} className="mx-auto text-gray-200" />
-                        <h3 className="text-2xl font-bold">No Quizzes Found</h3>
-                        <p className="text-secondary max-w-sm mx-auto">
-                            {user?.role === 'STUDENT'
-                                ? 'No quizzes found for your enrolled courses yet.'
-                                : 'No quizzes found for your courses yet.'}
+        <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="mission-page">
+            <motion.section variants={fadeIn} className="mission-shell p-6 lg:p-7">
+                <div className="mission-shell-content flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <span className="mission-kicker">
+                            <span className="mission-kicker-dot" />
+                            Assessment Hub
+                        </span>
+                        <h1 className="mission-title mt-3">Available Quizzes</h1>
+                        <p className="mission-subtitle">
+                            Test your knowledge, track speed and accuracy, and measure real learning progress.
                         </p>
-                        <button
-                            onClick={() => navigate('/app/courses')}
-                            className="btn-gradient inline-flex px-8"
-                        >
-                            Browse Courses
-                        </button>
-                    </motion.div>
-                )}
-            </motion.div>
+                    </div>
 
-            {isError && (
-                <motion.div variants={fadeIn} className="card-premium p-10 text-center bg-red-50 border-red-100">
-                    <p className="text-accent-red font-bold">Error connecting to server. Please try again.</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="mission-chip">
+                            <Radar size={13} />
+                            {totalQuizzes} quizzes live
+                        </span>
+                        <span className="mission-chip">
+                            <Trophy size={13} />
+                            {totalMarks} total marks
+                        </span>
+                    </div>
+                </div>
+            </motion.section>
+
+            {isError ? (
+                <motion.div variants={fadeIn}>
+                    <Card variant="layered" className="border border-error/35 bg-error/15 p-4 text-center text-error">
+                        Error connecting to server. Please try again.
+                    </Card>
                 </motion.div>
-            )}
+            ) : null}
+
+            <motion.section variants={staggerContainer} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {quizzes?.map((quiz) => {
+                    const isExpired = Boolean(quiz.deadline && new Date(quiz.deadline).getTime() <= Date.now());
+                    return (
+                    <motion.div key={quiz.id} variants={fadeIn} whileHover={{ y: -4 }}>
+                        <Card variant="layered" hoverLift className="h-full flex flex-col space-y-4">
+                            <div className="flex items-start justify-between gap-2">
+                                <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-primary-blue/15 text-primary-cyan">
+                                    <ClipboardCheck size={24} />
+                                </span>
+                                <Badge variant={isExpired ? 'error' : 'success'}>{isExpired ? 'Closed' : 'Active'}</Badge>
+                            </div>
+
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">{quiz.title}</h3>
+                                <p className="text-xs text-muted mt-1">{(quiz as any).courseTitle}</p>
+                            </div>
+
+                            <div className="space-y-2 text-sm text-muted">
+                                <div className="inline-flex items-center gap-2">
+                                    <Clock size={14} />
+                                    <span>{quiz.timeLimit} mins</span>
+                                </div>
+                                <div className="inline-flex items-center gap-2">
+                                    <Trophy size={14} />
+                                    <span>{quiz.totalMarks} marks</span>
+                                </div>
+                                <div className="inline-flex items-center gap-2">
+                                    <Clock size={14} />
+                                    <span>{quiz.deadline ? `Due ${new Date(quiz.deadline).toLocaleDateString()}` : 'No deadline'}</span>
+                                </div>
+                            </div>
+
+                            <Button
+                                variant="secondary"
+                                fullWidth
+                                className="mt-auto"
+                                disabled={isExpired && user?.role === 'STUDENT'}
+                                onClick={() => navigate(`/app/quiz/${quiz.id}`)}
+                            >
+                                {isExpired && user?.role === 'STUDENT' ? 'Deadline Passed' : 'Start Assessment'}
+                                <ArrowRight size={15} />
+                            </Button>
+                        </Card>
+                    </motion.div>
+                    );
+                })}
+
+                {(!quizzes || quizzes.length === 0) ? (
+                    <motion.div variants={fadeIn} className="col-span-full">
+                        <Card variant="layered" className="p-14 text-center space-y-4">
+                            <BookOpen size={54} className="mx-auto text-muted" />
+                            <h3 className="typ-h3 !text-2xl mb-0">No Quizzes Found</h3>
+                            <p className="typ-muted max-w-md mx-auto">
+                                {user?.role === 'STUDENT'
+                                    ? 'No quizzes found for your enrolled courses yet.'
+                                    : 'No quizzes found for your courses yet.'}
+                            </p>
+                            <div className="flex justify-center">
+                                <Button variant="primary" onClick={() => navigate('/app/courses')}>
+                                    Browse Courses
+                                </Button>
+                            </div>
+                        </Card>
+                    </motion.div>
+                ) : null}
+            </motion.section>
         </motion.div>
     );
 };

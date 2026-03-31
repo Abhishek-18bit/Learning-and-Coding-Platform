@@ -72,7 +72,7 @@ const InterviewPrepPage = () => {
                             onClick={() => setActiveCategory(cat.name)}
                             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all ${activeCategory === cat.name
                                 ? 'bg-primary text-white shadow-lg'
-                                : 'bg-white text-secondary hover:bg-gray-50'
+                                : 'bg-gray-50 text-secondary hover:bg-gray-100'
                                 }`}
                         >
                             {cat.icon}
@@ -88,7 +88,7 @@ const InterviewPrepPage = () => {
                         placeholder="Search questions..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-14 pr-4 py-4 bg-white border border-gray-100 rounded-2xl shadow-soft outline-none focus:ring-4 focus:ring-primary/10 transition-all font-medium"
+                        className="w-full pl-14 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl shadow-soft outline-none focus:ring-4 focus:ring-primary/10 transition-all font-medium"
                     />
                 </div>
             </motion.div>

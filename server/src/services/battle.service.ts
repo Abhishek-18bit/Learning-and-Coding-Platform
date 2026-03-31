@@ -1,24 +1,48 @@
-import { BattleRoom, BattleRoomStatus, Role, SubmissionStatus } from '@prisma/client';
+import { BattleRoom, BattleRoomStatus, Difficulty, Role, SubmissionStatus } from '@prisma/client';
 import prisma from '../db/prisma';
 import { ApiError } from '../utils/errors';
 import { ExecutionEngineService } from './execution-engine.service';
 import { getIO } from '../utils/socket';
+import { AchievementService } from './achievement.service';
 
 const ROOM_CODE_LENGTH = 6;
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const ALLOWED_DURATIONS = new Set([15, 30, 60]);
+const MIN_DURATION_MINUTES = 5;
+const MAX_DURATION_MINUTES = 180;
 const DEFAULT_MAX_PARTICIPANTS = 100;
 const MAX_ROOM_CODE_ATTEMPTS = 25;
 const TIMER_SYNC_INTERVAL_MS = 5_000;
+const MAX_END_REASON_LENGTH = 240;
+const MAX_ROOM_PROBLEMS = 25;
+const SOLVE_POINTS_BY_DIFFICULTY: Record<Difficulty, number> = {
+    EASY: 100,
+    MEDIUM: 200,
+    HARD: 320,
+};
+const SPEED_BONUS_FACTOR = 0.25;
+const WRONG_ATTEMPT_POINT_PENALTY = 12;
+const WRONG_ATTEMPT_TIME_PENALTY_MS = 20 * 60_000;
+
+export interface BattleRoomProblemItem {
+    id: string;
+    title: string;
+    difficulty: Difficulty;
+    order: number;
+}
 
 export interface BattleLeaderboardEntry {
     rank: number;
     userId: string;
     name: string;
     isCorrect: boolean;
+    score: number;
+    wrongAttempts: number;
+    penaltyTimeMs: number | null;
     attemptNumber: number;
     timeTaken: number | null;
     submissionTime: string | null;
+    solvedProblems: number;
+    totalProblems: number;
 }
 
 export interface BattleRoomSnapshot {
@@ -26,6 +50,8 @@ export interface BattleRoomSnapshot {
     roomCode: string;
     problemId: string;
     problemTitle: string;
+    problems: BattleRoomProblemItem[];
+    totalProblems: number;
     teacherId: string;
     status: BattleRoomStatus;
     duration: number;
@@ -42,13 +68,20 @@ interface RuntimeLeaderboardEntry {
     userId: string;
     name: string;
     isCorrect: boolean;
+    score: number;
+    wrongAttempts: number;
+    penaltyTimeMs: number;
     attemptNumber: number;
     timeTaken: number | null;
     submissionTime: Date | null;
+    solvedProblemIds: Set<string>;
+    solvedAtByProblem: Map<string, number>;
+    wrongAttemptsByProblem: Map<string, number>;
 }
 
 interface RuntimeRoomState {
     leaderboard: Map<string, RuntimeLeaderboardEntry>;
+    problemIds: string[];
     timer: NodeJS.Timeout | null;
 }
 
@@ -57,6 +90,12 @@ interface SubmitAttemptInput {
     userId: string;
     code: string;
     language: string;
+    problemId?: string;
+}
+
+interface EndRoomMetadata {
+    endedByUserId?: string | null;
+    teacherNote?: string | null;
 }
 
 export class BattleService {
@@ -64,7 +103,8 @@ export class BattleService {
 
     static async createRoom(input: {
         teacherId: string;
-        problemId: string;
+        problemId?: string;
+        problemIds?: string[];
         duration: number;
         maxParticipants?: number;
     }): Promise<BattleRoom> {
@@ -76,27 +116,53 @@ export class BattleService {
             throw new ApiError(400, 'maxParticipants must be between 2 and 500');
         }
 
-        const problem = await prisma.problem.findUnique({
-            where: { id: input.problemId },
+        const resolvedProblemIds = this.normalizeProblemIds(input.problemId, input.problemIds);
+        if (resolvedProblemIds.length === 0) {
+            throw new ApiError(400, 'At least one problem is required');
+        }
+        if (resolvedProblemIds.length > MAX_ROOM_PROBLEMS) {
+            throw new ApiError(400, `A room can include at most ${MAX_ROOM_PROBLEMS} problems`);
+        }
+
+        const problems = await prisma.problem.findMany({
+            where: {
+                id: {
+                    in: resolvedProblemIds,
+                },
+            },
             select: { id: true },
         });
-        if (!problem) {
-            throw new ApiError(404, 'Problem not found');
+        if (problems.length !== resolvedProblemIds.length) {
+            throw new ApiError(404, 'One or more selected problems were not found');
         }
 
         const roomCode = await this.generateUniqueRoomCode();
-        const room = await prisma.battleRoom.create({
-            data: {
-                roomCode,
-                problemId: input.problemId,
-                teacherId: input.teacherId,
-                duration: input.duration,
-                maxParticipants,
-                status: BattleRoomStatus.WAITING,
-            },
+        const primaryProblemId = resolvedProblemIds[0];
+
+        const room = await prisma.$transaction(async (tx) => {
+            const createdRoom = await tx.battleRoom.create({
+                data: {
+                    roomCode,
+                    problemId: primaryProblemId,
+                    teacherId: input.teacherId,
+                    duration: input.duration,
+                    maxParticipants,
+                    status: BattleRoomStatus.WAITING,
+                },
+            });
+
+            await tx.battleRoomProblem.createMany({
+                data: resolvedProblemIds.map((problemId, index) => ({
+                    roomId: createdRoom.id,
+                    problemId,
+                    order: index + 1,
+                })),
+            });
+
+            return createdRoom;
         });
 
-        this.ensureRuntime(room.id);
+        this.syncRuntimeProblemIds(room.id, resolvedProblemIds);
         return room;
     }
 
@@ -156,6 +222,12 @@ export class BattleService {
                 isConnected: true,
             },
         });
+
+        try {
+            await AchievementService.onBattleJoined(input.userId);
+        } catch (error) {
+            console.error('Failed to evaluate battle join achievements:', error);
+        }
 
         await this.hydrateRoomState(room.id);
         await this.emitParticipantUpdate(room.id);
@@ -226,9 +298,13 @@ export class BattleService {
         return snapshot;
     }
 
-    static async endRoom(roomId: string, teacherId: string) {
+    static async endRoom(roomId: string, teacherId: string, reason?: string) {
         await this.assertCanEndRoom(roomId, teacherId);
-        return this.endRoomInternal(roomId, 'MANUAL');
+        const teacherNote = this.normalizeTeacherEndReason(reason);
+        return this.endRoomInternal(roomId, 'MANUAL', {
+            endedByUserId: teacherId,
+            teacherNote,
+        });
     }
 
     static async getRoomSnapshot(roomId: string): Promise<BattleRoomSnapshot> {
@@ -246,7 +322,24 @@ export class BattleService {
                 endTime: true,
                 problem: {
                     select: {
+                        id: true,
                         title: true,
+                        difficulty: true,
+                    },
+                },
+                problems: {
+                    orderBy: {
+                        order: 'asc',
+                    },
+                    select: {
+                        order: true,
+                        problem: {
+                            select: {
+                                id: true,
+                                title: true,
+                                difficulty: true,
+                            },
+                        },
                     },
                 },
             },
@@ -256,18 +349,31 @@ export class BattleService {
             throw new ApiError(404, 'Battle room not found');
         }
 
-        await this.hydrateRoomState(room.id);
+        const roomProblems = this.buildRoomProblemItems(room);
+        this.syncRuntimeProblemIds(
+            room.id,
+            roomProblems.map((item) => item.id)
+        );
+
+        await this.hydrateRoomState(
+            room.id,
+            roomProblems.map((item) => item.id)
+        );
 
         const [participantCount, connectedParticipants] = await Promise.all([
             prisma.battleParticipant.count({ where: { roomId: room.id } }),
             prisma.battleParticipant.count({ where: { roomId: room.id, isConnected: true } }),
         ]);
 
+        const primaryProblem = roomProblems[0];
+
         return {
             id: room.id,
             roomCode: room.roomCode,
-            problemId: room.problemId,
-            problemTitle: room.problem.title,
+            problemId: primaryProblem.id,
+            problemTitle: primaryProblem.title,
+            problems: roomProblems,
+            totalProblems: roomProblems.length,
             teacherId: room.teacherId,
             status: room.status,
             duration: room.duration,
@@ -366,10 +472,19 @@ export class BattleService {
 
         const room = await prisma.battleRoom.findUnique({
             where: { id: input.roomId },
-            include: {
-                problem: {
-                    include: {
-                        testCases: true,
+            select: {
+                id: true,
+                problemId: true,
+                duration: true,
+                status: true,
+                startTime: true,
+                endTime: true,
+                problems: {
+                    orderBy: {
+                        order: 'asc',
+                    },
+                    select: {
+                        problemId: true,
                     },
                 },
             },
@@ -401,14 +516,44 @@ export class BattleService {
             throw new ApiError(400, 'Battle has ended');
         }
 
-        if (room.problem.testCases.length === 0) {
-            throw new ApiError(400, 'Battle problem has no test cases configured');
+        const roomProblemIds = this.resolveRoomProblemIds(room.problemId, room.problems);
+        this.syncRuntimeProblemIds(room.id, roomProblemIds);
+        await this.hydrateRoomState(room.id, roomProblemIds);
+
+        const runtimeState = this.ensureRuntime(room.id);
+        const existingEntry = runtimeState.leaderboard.get(input.userId);
+        if (existingEntry?.isCorrect) {
+            throw new ApiError(400, 'You already solved all battle problems');
+        }
+
+        const selectedProblemId =
+            typeof input.problemId === 'string' && input.problemId.trim()
+                ? input.problemId.trim()
+                : roomProblemIds[0];
+
+        if (!roomProblemIds.includes(selectedProblemId)) {
+            throw new ApiError(400, 'Selected problem does not belong to this battle room');
+        }
+
+        const selectedProblem = await prisma.problem.findUnique({
+            where: { id: selectedProblemId },
+            include: {
+                testCases: true,
+            },
+        });
+
+        if (!selectedProblem) {
+            throw new ApiError(404, 'Problem not found');
+        }
+
+        if (selectedProblem.testCases.length === 0) {
+            throw new ApiError(400, 'Selected battle problem has no test cases configured');
         }
 
         const summary = await ExecutionEngineService.run({
             code: trimmedCode,
             language: input.language,
-            testCases: room.problem.testCases.map((testCase) => ({
+            testCases: selectedProblem.testCases.map((testCase) => ({
                 id: testCase.id,
                 input: testCase.input,
                 expectedOutput: testCase.expectedOutput,
@@ -421,6 +566,7 @@ export class BattleService {
 
         const submission = await this.createBattleSubmissionWithRetry({
             roomId: room.id,
+            problemId: selectedProblemId,
             userId: input.userId,
             isCorrect,
             submissionTime: now,
@@ -431,10 +577,14 @@ export class BattleService {
         await this.updateLeaderboardCache({
             roomId: room.id,
             userId: input.userId,
+            problemId: selectedProblemId,
+            problemDifficulty: selectedProblem.difficulty,
             attemptNumber: submission.attemptNumber,
             isCorrect,
             timeTaken,
             submissionTime: submission.submissionTime,
+            roomDurationMs: room.duration * 60_000,
+            roomProblemIds,
         });
 
         const leaderboard = this.buildLeaderboard(room.id);
@@ -448,6 +598,7 @@ export class BattleService {
             submission,
             summary,
             leaderboard,
+            problemId: selectedProblemId,
             remainingTimeMs: this.calculateRemainingTimeMs(BattleRoomStatus.LIVE, room.endTime),
         };
     }
@@ -477,6 +628,7 @@ export class BattleService {
 
     private static async createBattleSubmissionWithRetry(data: {
         roomId: string;
+        problemId: string;
         userId: string;
         isCorrect: boolean;
         submissionTime: Date;
@@ -496,6 +648,7 @@ export class BattleService {
                     return tx.battleSubmission.create({
                         data: {
                             roomId: data.roomId,
+                            problemId: data.problemId,
                             userId: data.userId,
                             attemptNumber: currentCount + 1,
                             isCorrect: data.isCorrect,
@@ -519,27 +672,60 @@ export class BattleService {
     private static async updateLeaderboardCache(data: {
         roomId: string;
         userId: string;
+        problemId: string;
+        problemDifficulty: Difficulty;
         attemptNumber: number;
         isCorrect: boolean;
         timeTaken: number;
         submissionTime: Date;
+        roomDurationMs: number;
+        roomProblemIds?: string[];
     }) {
-        await this.hydrateRoomState(data.roomId);
+        await this.hydrateRoomState(data.roomId, data.roomProblemIds);
         const state = this.ensureRuntime(data.roomId);
+
+        if (state.problemIds.length === 0 && data.roomProblemIds?.length) {
+            this.syncRuntimeProblemIds(data.roomId, data.roomProblemIds);
+        }
+
+        const totalProblems = Math.max(state.problemIds.length, 1);
+        const allowedProblemIds = new Set(state.problemIds);
+
         const existing = state.leaderboard.get(data.userId);
         if (!existing) {
             const user = await prisma.user.findUnique({
                 where: { id: data.userId },
                 select: { name: true },
             });
-            state.leaderboard.set(data.userId, {
+
+            const newEntry: RuntimeLeaderboardEntry = {
                 userId: data.userId,
                 name: user?.name || `User ${data.userId.slice(0, 6)}`,
-                isCorrect: data.isCorrect,
+                isCorrect: false,
+                score: 0,
+                wrongAttempts: 0,
+                penaltyTimeMs: 0,
                 attemptNumber: data.attemptNumber,
-                timeTaken: data.isCorrect ? data.timeTaken : null,
+                timeTaken: null,
                 submissionTime: data.submissionTime,
-            });
+                solvedProblemIds: new Set<string>(),
+                solvedAtByProblem: new Map<string, number>(),
+                wrongAttemptsByProblem: new Map<string, number>(),
+            };
+
+            state.leaderboard.set(data.userId, newEntry);
+            this.applySubmissionToRuntimeEntry(
+                newEntry,
+                {
+                    problemId: data.problemId,
+                    problemDifficulty: data.problemDifficulty,
+                    isCorrect: data.isCorrect,
+                    timeTaken: data.timeTaken,
+                    roomDurationMs: data.roomDurationMs,
+                },
+                totalProblems,
+                allowedProblemIds
+            );
             return;
         }
 
@@ -548,29 +734,52 @@ export class BattleService {
         }
 
         existing.attemptNumber = Math.max(existing.attemptNumber, data.attemptNumber);
-        if (data.isCorrect) {
-            existing.isCorrect = true;
-            existing.timeTaken = data.timeTaken;
-            existing.submissionTime = data.submissionTime;
-        } else if (!existing.submissionTime || data.submissionTime > existing.submissionTime) {
+        if (!existing.submissionTime || data.submissionTime > existing.submissionTime) {
             existing.submissionTime = data.submissionTime;
         }
+
+        this.applySubmissionToRuntimeEntry(
+            existing,
+            {
+                problemId: data.problemId,
+                problemDifficulty: data.problemDifficulty,
+                isCorrect: data.isCorrect,
+                timeTaken: data.timeTaken,
+                roomDurationMs: data.roomDurationMs,
+            },
+            totalProblems,
+            allowedProblemIds
+        );
     }
 
     private static buildLeaderboard(roomId: string): BattleLeaderboardEntry[] {
         const state = this.ensureRuntime(roomId);
+        const totalProblems = Math.max(state.problemIds.length, 1);
         const rows = Array.from(state.leaderboard.values()).sort((a, b) => {
+            if (a.score !== b.score) return b.score - a.score;
+
+            const solvedDiff = b.solvedProblemIds.size - a.solvedProblemIds.size;
+            if (solvedDiff !== 0) return solvedDiff;
+
             if (a.isCorrect !== b.isCorrect) return a.isCorrect ? -1 : 1;
 
-            const timeA = a.isCorrect ? (a.timeTaken ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-            const timeB = b.isCorrect ? (b.timeTaken ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-            if (timeA !== timeB) return timeA - timeB;
+            if (a.penaltyTimeMs !== b.penaltyTimeMs) {
+                return a.penaltyTimeMs - b.penaltyTimeMs;
+            }
+
+            if (a.isCorrect || b.isCorrect) {
+                const completionA = a.timeTaken ?? Number.MAX_SAFE_INTEGER;
+                const completionB = b.timeTaken ?? Number.MAX_SAFE_INTEGER;
+                if (completionA !== completionB) return completionA - completionB;
+            }
 
             if (a.attemptNumber !== b.attemptNumber) return a.attemptNumber - b.attemptNumber;
 
             const submittedA = a.submissionTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
             const submittedB = b.submissionTime?.getTime() ?? Number.MAX_SAFE_INTEGER;
-            return submittedA - submittedB;
+            if (submittedA !== submittedB) return submittedA - submittedB;
+
+            return a.name.localeCompare(b.name);
         });
 
         return rows.map((row, index) => ({
@@ -578,19 +787,34 @@ export class BattleService {
             userId: row.userId,
             name: row.name,
             isCorrect: row.isCorrect,
+            score: row.score,
+            wrongAttempts: row.wrongAttempts,
+            penaltyTimeMs: row.penaltyTimeMs > 0 ? row.penaltyTimeMs : null,
             attemptNumber: row.attemptNumber,
             timeTaken: row.isCorrect ? row.timeTaken : null,
             submissionTime: row.submissionTime ? row.submissionTime.toISOString() : null,
+            solvedProblems: Math.min(row.solvedProblemIds.size, totalProblems),
+            totalProblems,
         }));
     }
 
-    private static async hydrateRoomState(roomId: string) {
+    private static async hydrateRoomState(roomId: string, knownProblemIds?: string[]) {
         const state = this.ensureRuntime(roomId);
+
+        if (knownProblemIds?.length) {
+            this.syncRuntimeProblemIds(roomId, knownProblemIds);
+        } else if (state.problemIds.length === 0) {
+            await this.hydrateRuntimeProblemIds(roomId);
+        }
+
         if (state.leaderboard.size > 0) {
             return;
         }
 
-        const [participants, submissions] = await Promise.all([
+        const totalProblems = Math.max(state.problemIds.length, 1);
+        const allowedProblemIds = new Set(state.problemIds);
+
+        const [participants, submissions, roomMeta] = await Promise.all([
             prisma.battleParticipant.findMany({
                 where: { roomId },
                 include: {
@@ -611,19 +835,35 @@ export class BattleService {
                             name: true,
                         },
                     },
+                    problem: {
+                        select: {
+                            difficulty: true,
+                        },
+                    },
                 },
                 orderBy: [{ submissionTime: 'asc' }, { attemptNumber: 'asc' }],
             }),
+            prisma.battleRoom.findUnique({
+                where: { id: roomId },
+                select: { duration: true },
+            }),
         ]);
+        const roomDurationMs = (roomMeta?.duration ?? MIN_DURATION_MINUTES) * 60_000;
 
         participants.forEach((participant) => {
             state.leaderboard.set(participant.userId, {
                 userId: participant.userId,
                 name: participant.user.name,
                 isCorrect: false,
+                score: 0,
+                wrongAttempts: 0,
+                penaltyTimeMs: 0,
                 attemptNumber: 0,
                 timeTaken: null,
                 submissionTime: null,
+                solvedProblemIds: new Set<string>(),
+                solvedAtByProblem: new Map<string, number>(),
+                wrongAttemptsByProblem: new Map<string, number>(),
             });
         });
 
@@ -632,24 +872,125 @@ export class BattleService {
                 userId: submission.userId,
                 name: submission.user.name,
                 isCorrect: false,
+                score: 0,
+                wrongAttempts: 0,
+                penaltyTimeMs: 0,
                 attemptNumber: 0,
                 timeTaken: null,
                 submissionTime: null,
+                solvedProblemIds: new Set<string>(),
+                solvedAtByProblem: new Map<string, number>(),
+                wrongAttemptsByProblem: new Map<string, number>(),
             };
 
-            if (!existing.isCorrect) {
-                existing.attemptNumber = Math.max(existing.attemptNumber, submission.attemptNumber);
-                if (submission.isCorrect) {
-                    existing.isCorrect = true;
-                    existing.timeTaken = submission.timeTaken;
-                    existing.submissionTime = submission.submissionTime;
-                } else if (!existing.submissionTime || submission.submissionTime > existing.submissionTime) {
-                    existing.submissionTime = submission.submissionTime;
-                }
+            if (existing.isCorrect) {
+                state.leaderboard.set(submission.userId, existing);
+                return;
             }
+
+            existing.attemptNumber = Math.max(existing.attemptNumber, submission.attemptNumber);
+            if (!existing.submissionTime || submission.submissionTime > existing.submissionTime) {
+                existing.submissionTime = submission.submissionTime;
+            }
+
+            this.applySubmissionToRuntimeEntry(
+                existing,
+                {
+                    problemId: submission.problemId,
+                    problemDifficulty: submission.problem.difficulty,
+                    isCorrect: submission.isCorrect,
+                    timeTaken: submission.timeTaken,
+                    roomDurationMs,
+                },
+                totalProblems,
+                allowedProblemIds
+            );
 
             state.leaderboard.set(submission.userId, existing);
         });
+    }
+
+    private static applySubmissionToRuntimeEntry(
+        entry: RuntimeLeaderboardEntry,
+        submission: {
+            problemId: string;
+            problemDifficulty: Difficulty;
+            isCorrect: boolean;
+            timeTaken: number;
+            roomDurationMs: number;
+        },
+        totalProblems: number,
+        allowedProblemIds: Set<string>
+    ) {
+        const isAllowedProblem = allowedProblemIds.size === 0 || allowedProblemIds.has(submission.problemId);
+        if (!isAllowedProblem) {
+            return;
+        }
+
+        const alreadySolvedProblem = entry.solvedProblemIds.has(submission.problemId);
+        if (submission.isCorrect) {
+            if (alreadySolvedProblem) {
+                return;
+            }
+
+            const wrongAttemptsForProblem = entry.wrongAttemptsByProblem.get(submission.problemId) ?? 0;
+            const earnedScore = this.calculateSolveScore({
+                difficulty: submission.problemDifficulty,
+                timeTaken: submission.timeTaken,
+                roomDurationMs: submission.roomDurationMs,
+                wrongAttemptsForProblem,
+            });
+
+            entry.score += earnedScore;
+            entry.solvedProblemIds.add(submission.problemId);
+            entry.solvedAtByProblem.set(submission.problemId, submission.timeTaken);
+            entry.penaltyTimeMs += submission.timeTaken + wrongAttemptsForProblem * WRONG_ATTEMPT_TIME_PENALTY_MS;
+        } else if (!alreadySolvedProblem) {
+            const nextWrongAttemptsForProblem = (entry.wrongAttemptsByProblem.get(submission.problemId) ?? 0) + 1;
+            entry.wrongAttemptsByProblem.set(submission.problemId, nextWrongAttemptsForProblem);
+            entry.wrongAttempts += 1;
+            entry.score = Math.max(0, entry.score - WRONG_ATTEMPT_POINT_PENALTY);
+            entry.penaltyTimeMs += Math.round(WRONG_ATTEMPT_TIME_PENALTY_MS * 0.15);
+        }
+
+        if (entry.solvedProblemIds.size >= totalProblems) {
+            entry.isCorrect = true;
+            entry.timeTaken = this.resolveCompletionTimeMs(entry.solvedAtByProblem);
+        }
+    }
+
+    private static calculateSolveScore(input: {
+        difficulty: Difficulty;
+        timeTaken: number;
+        roomDurationMs: number;
+        wrongAttemptsForProblem: number;
+    }) {
+        const baseScore = SOLVE_POINTS_BY_DIFFICULTY[input.difficulty] ?? SOLVE_POINTS_BY_DIFFICULTY.MEDIUM;
+        const speedBonus = this.calculateSpeedBonus(baseScore, input.timeTaken, input.roomDurationMs);
+        const wrongAttemptPenalty = input.wrongAttemptsForProblem * WRONG_ATTEMPT_POINT_PENALTY;
+        return Math.max(5, baseScore + speedBonus - wrongAttemptPenalty);
+    }
+
+    private static calculateSpeedBonus(baseScore: number, timeTaken: number, roomDurationMs: number) {
+        const safeDuration = Math.max(1, roomDurationMs);
+        const elapsedRatio = Math.min(Math.max(timeTaken / safeDuration, 0), 1);
+        const bonusMultiplier = (1 - elapsedRatio) * SPEED_BONUS_FACTOR;
+        return Math.round(baseScore * bonusMultiplier);
+    }
+
+    private static resolveCompletionTimeMs(solvedAtByProblem: Map<string, number>) {
+        if (solvedAtByProblem.size === 0) {
+            return null;
+        }
+
+        let latestTime = 0;
+        solvedAtByProblem.forEach((time) => {
+            if (time > latestTime) {
+                latestTime = time;
+            }
+        });
+
+        return latestTime;
     }
 
     private static async emitParticipantUpdate(roomId: string) {
@@ -694,7 +1035,11 @@ export class BattleService {
         state.timer = timer;
     }
 
-    private static async endRoomInternal(roomId: string, reason: 'MANUAL' | 'TIME_UP') {
+    private static async endRoomInternal(
+        roomId: string,
+        reason: 'MANUAL' | 'TIME_UP',
+        metadata: EndRoomMetadata = {}
+    ) {
         const room = await prisma.battleRoom.findUnique({
             where: { id: roomId },
             select: { id: true, status: true, endTime: true },
@@ -720,6 +1065,20 @@ export class BattleService {
         }
 
         const snapshot = await this.getRoomSnapshot(room.id);
+
+        try {
+            await AchievementService.onBattleEnded({
+                roomId: room.id,
+                leaderboard: snapshot.leaderboard.map((entry) => ({
+                    rank: entry.rank,
+                    userId: entry.userId,
+                    isCorrect: entry.isCorrect,
+                })),
+            });
+        } catch (error) {
+            console.error('Failed to evaluate battle end achievements:', error);
+        }
+
         const io = getIO();
         io.to(this.getSocketRoom(room.id)).emit('timer_sync', {
             roomId: room.id,
@@ -731,6 +1090,8 @@ export class BattleService {
         io.to(this.getSocketRoom(room.id)).emit('battle_ended', {
             roomId: room.id,
             reason,
+            endedByUserId: metadata.endedByUserId || null,
+            teacherNote: metadata.teacherNote || null,
             endedAt: snapshot.endTime,
             leaderboard: snapshot.leaderboard,
         });
@@ -778,9 +1139,25 @@ export class BattleService {
     }
 
     private static assertDuration(duration: number) {
-        if (!Number.isInteger(duration) || !ALLOWED_DURATIONS.has(duration)) {
-            throw new ApiError(400, 'Duration must be one of: 15, 30, 60 minutes');
+        if (!Number.isInteger(duration) || duration < MIN_DURATION_MINUTES || duration > MAX_DURATION_MINUTES) {
+            throw new ApiError(
+                400,
+                `Duration must be between ${MIN_DURATION_MINUTES} and ${MAX_DURATION_MINUTES} minutes`
+            );
         }
+    }
+
+    private static normalizeTeacherEndReason(reason?: string): string | null {
+        if (typeof reason !== 'string') {
+            return null;
+        }
+
+        const sanitized = reason.replace(/\u0000/g, '').trim();
+        if (!sanitized) {
+            return null;
+        }
+
+        return sanitized.slice(0, MAX_END_REASON_LENGTH);
     }
 
     private static calculateRemainingTimeMs(status: BattleRoomStatus, endTime: Date | null): number {
@@ -798,10 +1175,129 @@ export class BattleService {
 
         const state: RuntimeRoomState = {
             leaderboard: new Map<string, RuntimeLeaderboardEntry>(),
+            problemIds: [],
             timer: null,
         };
         this.runtime.set(roomId, state);
         return state;
+    }
+
+    private static normalizeProblemIds(problemId?: string, problemIds?: string[]): string[] {
+        const merged = [
+            ...(Array.isArray(problemIds) ? problemIds : []),
+            ...(typeof problemId === 'string' ? [problemId] : []),
+        ];
+
+        const normalized: string[] = [];
+        const seen = new Set<string>();
+        merged.forEach((value) => {
+            if (typeof value !== 'string') {
+                return;
+            }
+            const trimmed = value.trim();
+            if (!trimmed || seen.has(trimmed)) {
+                return;
+            }
+            seen.add(trimmed);
+            normalized.push(trimmed);
+        });
+
+        return normalized;
+    }
+
+    private static resolveRoomProblemIds(
+        primaryProblemId: string,
+        problemRows: Array<{ problemId: string }>
+    ): string[] {
+        const fromRows = problemRows.map((row) => row.problemId);
+        const combined = fromRows.length > 0 ? fromRows : [primaryProblemId];
+        return this.normalizeProblemIds(undefined, combined);
+    }
+
+    private static buildRoomProblemItems(room: {
+        problem: {
+            id: string;
+            title: string;
+            difficulty: Difficulty;
+        };
+        problems: Array<{
+            order: number;
+            problem: {
+                id: string;
+                title: string;
+                difficulty: Difficulty;
+            };
+        }>;
+    }): BattleRoomProblemItem[] {
+        if (room.problems.length === 0) {
+            return [
+                {
+                    id: room.problem.id,
+                    title: room.problem.title,
+                    difficulty: room.problem.difficulty,
+                    order: 1,
+                },
+            ];
+        }
+
+        const seen = new Set<string>();
+        const mapped: BattleRoomProblemItem[] = [];
+        room.problems.forEach((entry) => {
+            if (seen.has(entry.problem.id)) {
+                return;
+            }
+            seen.add(entry.problem.id);
+            mapped.push({
+                id: entry.problem.id,
+                title: entry.problem.title,
+                difficulty: entry.problem.difficulty,
+                order: entry.order,
+            });
+        });
+
+        if (!seen.has(room.problem.id)) {
+            mapped.unshift({
+                id: room.problem.id,
+                title: room.problem.title,
+                difficulty: room.problem.difficulty,
+                order: 0,
+            });
+        }
+
+        mapped.sort((a, b) => a.order - b.order);
+        return mapped.map((item, index) => ({
+            ...item,
+            order: index + 1,
+        }));
+    }
+
+    private static syncRuntimeProblemIds(roomId: string, problemIds: string[]) {
+        const state = this.ensureRuntime(roomId);
+        state.problemIds = this.normalizeProblemIds(undefined, problemIds);
+    }
+
+    private static async hydrateRuntimeProblemIds(roomId: string) {
+        const room = await prisma.battleRoom.findUnique({
+            where: { id: roomId },
+            select: {
+                problemId: true,
+                problems: {
+                    orderBy: {
+                        order: 'asc',
+                    },
+                    select: {
+                        problemId: true,
+                    },
+                },
+            },
+        });
+
+        if (!room) {
+            throw new ApiError(404, 'Battle room not found');
+        }
+
+        const problemIds = this.resolveRoomProblemIds(room.problemId, room.problems);
+        this.syncRuntimeProblemIds(roomId, problemIds);
     }
 
     private static async generateUniqueRoomCode() {

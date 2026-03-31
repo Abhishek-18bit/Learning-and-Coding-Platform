@@ -28,6 +28,7 @@ type MessageRecord = Prisma.ChatMessageGetPayload<{
                 id: true;
                 name: true;
                 role: true;
+                email: true;
             };
         };
     };
@@ -133,6 +134,7 @@ export class ChatService {
                         id: true,
                         name: true,
                         role: true,
+                        email: true,
                     },
                 },
             },
@@ -207,6 +209,7 @@ export class ChatService {
                             id: true,
                             name: true,
                             role: true,
+                            email: true,
                         },
                     },
                 },
@@ -657,9 +660,26 @@ export class ChatService {
             deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
             sender: {
                 id: message.sender.id,
-                name: message.sender.name,
+                name: this.resolveDisplayName(message.sender.name, message.sender.email, message.sender.id),
                 role: message.sender.role,
             },
         };
+    }
+
+    private static resolveDisplayName(rawName: string, email: string, userId: string): string {
+        const cleanedName = String(rawName || '').trim();
+        const looksLikeUuid = UUID_PATTERN.test(cleanedName);
+        const looksLikeUserId = cleanedName.toLowerCase() === String(userId || '').toLowerCase();
+
+        if (cleanedName && !looksLikeUuid && !looksLikeUserId) {
+            return cleanedName;
+        }
+
+        const emailPrefix = String(email || '').split('@')[0]?.trim();
+        if (emailPrefix) {
+            return emailPrefix;
+        }
+
+        return `User ${String(userId || '').slice(0, 6)}`;
     }
 }

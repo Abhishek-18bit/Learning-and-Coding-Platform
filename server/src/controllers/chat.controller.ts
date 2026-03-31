@@ -48,6 +48,18 @@ export class ChatController {
                 type: req.body.type,
             });
 
+            const contextType = String(req.params.contextType || '').toUpperCase();
+            const contextId = String(req.params.contextId || '').trim();
+            const { getIO } = await import('../utils/socket');
+            getIO()
+                .to(ChatService.getSocketRoom(result.channel.id))
+                .emit('chat_message', {
+                    channelId: result.channel.id,
+                    contextType,
+                    contextId,
+                    message: result.message,
+                });
+
             res.status(201).json({
                 success: true,
                 status: 'Message sent',

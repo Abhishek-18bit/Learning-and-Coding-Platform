@@ -3,6 +3,7 @@ import api from './api';
 export interface StudentDashboardData {
     coursesEnrolled: number;
     problemsSolved: number;
+    streakDays: number;
     quizAverage: number;
     interviewProgress: number;
     enrolledCourses: {
@@ -50,6 +51,17 @@ export interface TeacherDashboardData {
     }[];
 }
 
+export interface PlatformStatsData {
+    totalCourses: number;
+    totalProblems: number;
+    totalQuizzes: number;
+    totalBattleRooms: number;
+    totalStudents: number;
+    totalTeachers: number;
+    aiGeneratedQuizzes: number;
+    totalSubmissions: number;
+}
+
 export const dashboardService = {
     getStudentData: async () => {
         const response = await api.get<{ success: boolean; data: StudentDashboardData }>('/dashboard/student');
@@ -57,6 +69,10 @@ export const dashboardService = {
     },
     getTeacherData: async () => {
         const response = await api.get<{ success: boolean; data: TeacherDashboardData }>('/dashboard/teacher');
+        return response.data.data;
+    },
+    getPlatformStats: async () => {
+        const response = await api.get<{ success: boolean; data: PlatformStatsData }>('/dashboard/platform-stats');
         return response.data.data;
     },
 };

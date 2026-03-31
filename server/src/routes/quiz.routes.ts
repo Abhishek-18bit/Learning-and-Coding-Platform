@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { QuizController } from '../controllers/quiz.controller';
 import { authenticate, authorize } from '../middlewares/auth.middleware';
 import { validateBody } from '../middlewares/validate.middleware';
-import { createQuizSchema, addQuestionSchema } from '../validations/quiz.validation';
+import { createQuizSchema, addQuestionSchema, updateQuizDeadlineSchema } from '../validations/quiz.validation';
 
 const router = Router();
 
@@ -10,6 +10,7 @@ const router = Router();
 router.post('/', authenticate, authorize('TEACHER'), validateBody(createQuizSchema), QuizController.create);
 // Teacher/Admin route for incremental question management
 router.post('/:quizId/questions', authenticate, authorize('TEACHER', 'ADMIN'), validateBody(addQuestionSchema), QuizController.addQuestion);
+router.patch('/:quizId/deadline', authenticate, authorize('TEACHER', 'ADMIN'), validateBody(updateQuizDeadlineSchema), QuizController.updateDeadline);
 router.delete('/:quizId', authenticate, authorize('TEACHER', 'ADMIN'), QuizController.delete);
 
 // Student/General Authenticated Routes

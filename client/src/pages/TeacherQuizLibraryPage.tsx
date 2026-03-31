@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { BookOpen, CalendarDays, ClipboardCheck, Filter } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, BookOpen, CalendarDays, ClipboardCheck, Filter, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { dashboardService } from '../services/dashboard.service';
 import { quizService, type Quiz, type QuizSourceType } from '../services/quiz.service';
+import Modal from '../components/ui/Modal';
+import Button from '../components/ui/Button';
 
 type SourceFilter = 'ALL' | QuizSourceType;
 
@@ -17,8 +19,10 @@ const FILTERS: SourceFilter[] = ['ALL', 'MANUAL', 'LESSON_AI', 'PDF_AI'];
 
 const TeacherQuizLibraryPage = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { user, loading } = useAuth();
     const [sourceFilter, setSourceFilter] = useState<SourceFilter>('ALL');
+    const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
     const query = useQuery({
         queryKey: ['teacher-quiz-library', user?.id],
@@ -50,6 +54,19 @@ const TeacherQuizLibraryPage = () => {
         if (sourceFilter === 'ALL') return data;
         return data.filter((quiz) => quiz.sourceType === sourceFilter);
     }, [query.data, sourceFilter]);
+
+    const deleteMutation = useMutation({
+        mutationFn: (quizId: string) => quizService.remove(quizId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['teacher-quiz-library'] });
+            queryClient.invalidateQueries({ queryKey: ['quizzes'] });
+            setDeleteTarget(null);
+        },
+        onError: (error: any) => {
+            const message = error?.response?.data?.message || 'Failed to delete quiz.';
+            window.alert(message);
+        },
+    });
 
     if (loading) {
         return (
@@ -137,18 +154,74 @@ const TeacherQuizLibraryPage = () => {
                                     <CalendarDays size={12} />
                                     {new Date(quiz.createdAt).toLocaleDateString()}
                                 </span>
+                                <span className={`px-2 py-0.5 rounded-full font-semibold ${quiz.deadline ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
+                                    {quiz.deadline ? `Deadline: ${new Date(quiz.deadline).toLocaleDateString()}` : 'No deadline'}
+                                </span>
                             </div>
                         </div>
 
-                        <button
-                            onClick={() => navigate(`/app/quizzes/${quiz.id}/manage`)}
-                            className="px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold text-xs uppercase tracking-widest hover:bg-primary/15 transition-colors"
-                        >
-                            View Quiz
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => navigate(`/app/quizzes/${quiz.id}/manage`)}
+                                className="px-4 py-2 rounded-xl bg-primary/10 text-primary font-bold text-xs uppercase tracking-widest hover:bg-primary/15 transition-colors"
+                            >
+                                View Quiz
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteTarget({ id: quiz.id, title: quiz.title })}
+                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-500/15 to-red-400/10 text-red-700 border border-red-200 font-bold text-xs uppercase tracking-widest hover:from-red-500/25 hover:to-red-400/20 transition-colors"
+                            >
+                                <span className="inline-flex items-center gap-1">
+                                    <Trash2 size={13} />
+                                    Delete
+                                </span>
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>
+
+            <Modal
+                isOpen={Boolean(deleteTarget)}
+                onClose={() => {
+                    if (!deleteMutation.isPending) {
+                        setDeleteTarget(null);
+                    }
+                }}
+                title="Delete Quiz"
+                description="This action permanently deletes the quiz and all related attempts."
+                footer={
+                    <div className="flex justify-end gap-2">
+                        <Button
+                            variant="ghost"
+                            onClick={() => setDeleteTarget(null)}
+                            disabled={deleteMutation.isPending}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="danger"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => {
+                                if (deleteTarget) {
+                                    deleteMutation.mutate(deleteTarget.id);
+                                }
+                            }}
+                            className="bg-gradient-to-r from-error/60 to-error/35 border-error/70 hover:from-error/70 hover:to-error/50"
+                        >
+                            {deleteMutation.isPending ? 'Deleting...' : 'Delete Quiz'}
+                        </Button>
+                    </div>
+                }
+            >
+                <div className="rounded-xl border border-error/30 bg-error/10 px-4 py-3">
+                    <p className="text-sm font-semibold text-error inline-flex items-center gap-2">
+                        <AlertTriangle size={15} />
+                        {deleteTarget ? `"${deleteTarget.title}" will be removed permanently.` : 'Selected quiz will be removed permanently.'}
+                    </p>
+                </div>
+            </Modal>
         </div>
     );
 };

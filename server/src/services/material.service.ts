@@ -67,6 +67,7 @@ export class MaterialService {
         difficulty: Difficulty;
         questionCount: number;
         title?: string;
+        deadline?: string;
     }) {
         const material = await prisma.courseMaterial.findUnique({
             where: { id: data.materialId },
@@ -112,6 +113,7 @@ export class MaterialService {
             title: quizTitle,
             courseId: material.course.id,
             difficulty: data.difficulty,
+            deadline: data.deadline,
             timeLimit,
             totalMarks,
             questions,

@@ -15,14 +15,26 @@ export interface BattleRoom {
     createdAt: string;
 }
 
+export interface BattleRoomProblem {
+    id: string;
+    title: string;
+    difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+    order: number;
+}
+
 export interface BattleLeaderboardEntry {
     rank: number;
     userId: string;
     name: string;
     isCorrect: boolean;
+    score: number;
+    wrongAttempts: number;
+    penaltyTimeMs: number | null;
     attemptNumber: number;
     timeTaken: number | null;
     submissionTime: string | null;
+    solvedProblems: number;
+    totalProblems: number;
 }
 
 export interface BattleRoomSnapshot {
@@ -30,6 +42,8 @@ export interface BattleRoomSnapshot {
     roomCode: string;
     problemId: string;
     problemTitle: string;
+    problems: BattleRoomProblem[];
+    totalProblems: number;
     teacherId: string;
     status: BattleRoomStatus;
     duration: number;
@@ -43,8 +57,9 @@ export interface BattleRoomSnapshot {
 }
 
 export interface CreateBattleRoomPayload {
-    problemId: string;
-    duration: 15 | 30 | 60;
+    problemIds: string[];
+    problemId?: string;
+    duration: number;
     maxParticipants?: number;
 }
 
@@ -86,12 +101,14 @@ export const battleService = {
         return response.data.room;
     },
 
-    endRoom: async (roomId: string) => {
+    endRoom: async (roomId: string, reason?: string) => {
         const response = await api.post<{
             success: boolean;
             message: string;
             room: BattleRoomSnapshot;
-        }>(`/battle/end/${roomId}`);
+        }>(`/battle/end/${roomId}`, {
+            ...(reason?.trim() ? { reason: reason.trim() } : {}),
+        });
         return response.data.room;
     },
 };
