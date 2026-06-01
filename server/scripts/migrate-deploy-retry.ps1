@@ -3,6 +3,59 @@ $baseDelayMs = if ($env:PRISMA_MIGRATE_RETRY_DELAY_MS) { [int]$env:PRISMA_MIGRAT
 $maxDelayMs = if ($env:PRISMA_MIGRATE_MAX_DELAY_MS) { [int]$env:PRISMA_MIGRATE_MAX_DELAY_MS } else { 20000 }
 $isUpToDatePattern = 'up to date|No pending migrations|Database schema is up to date|All migrations have been applied'
 
+function Import-DotEnvIfMissing {
+    $envPath = Join-Path (Get-Location) ".env"
+    if (-not (Test-Path $envPath)) {
+        return
+    }
+
+    Get-Content $envPath | ForEach-Object {
+        $line = $_.Trim()
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) {
+            return
+        }
+
+        if ($line -match '^([^=]+)=(.*)$') {
+            $key = $matches[1].Trim()
+            $value = $matches[2].Trim() -replace '^["'']|["'']$', ''
+            $currentValue = [Environment]::GetEnvironmentVariable($key)
+
+            if (-not [string]::IsNullOrWhiteSpace($key) -and [string]::IsNullOrWhiteSpace($currentValue)) {
+                Set-Item -Path "Env:$key" -Value $value
+            }
+        }
+    }
+}
+
+function Get-MigrationDatabaseUrl {
+    $directUrl = $env:DIRECT_URL
+    if (-not [string]::IsNullOrWhiteSpace($directUrl)) {
+        return @{
+            Url = $directUrl.Trim()
+            Source = "DIRECT_URL"
+        }
+    }
+
+    $databaseUrl = $env:DATABASE_URL
+    if (-not [string]::IsNullOrWhiteSpace($databaseUrl) -and $databaseUrl -match '-pooler\.') {
+        return @{
+            Url = ($databaseUrl -replace '-pooler\.', '.').Trim()
+            Source = "DATABASE_URL (derived from Neon pooler host)"
+        }
+    }
+
+    return $null
+}
+
+Import-DotEnvIfMissing
+
+$resolvedMigrationUrl = Get-MigrationDatabaseUrl
+if ($resolvedMigrationUrl -ne $null) {
+    $env:DATABASE_URL = $resolvedMigrationUrl.Url
+    $masked = $resolvedMigrationUrl.Url -replace '://([^:]+):([^@]+)@', '://$1:****@'
+    Write-Host "[migrate-retry] Using migration connection from $($resolvedMigrationUrl.Source): $masked" -ForegroundColor Gray
+}
+
 for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
     if ($attempt -gt 1) {
         Write-Host "[migrate-retry] Attempt $attempt/$maxAttempts" -ForegroundColor Yellow

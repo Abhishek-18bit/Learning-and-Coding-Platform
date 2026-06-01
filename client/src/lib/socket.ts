@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import { API_ORIGIN } from '../config/runtime';
 
 type GenericSocketHandler = (...args: any[]) => void;
 
@@ -6,28 +7,6 @@ const LISTENER_REGISTRY = new WeakMap<Socket, Map<string, Set<GenericSocketHandl
 
 let socketInstance: Socket | null = null;
 let currentToken: string | null = null;
-
-const stripApiSuffix = (value: string) => value.replace(/\/api\/?$/i, '');
-
-const resolveSocketUrl = () => {
-    const configured = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-    const normalized = stripApiSuffix(configured);
-
-    try {
-        const parsed = new URL(normalized);
-        const pathname = parsed.pathname.endsWith('/')
-            ? parsed.pathname.slice(0, -1)
-            : parsed.pathname;
-
-        if (!pathname || pathname === '/') {
-            return parsed.origin;
-        }
-
-        return `${parsed.origin}${pathname}`;
-    } catch (_error) {
-        return normalized;
-    }
-};
 
 const getListenerSet = (socket: Socket, event: string) => {
     let eventMap = LISTENER_REGISTRY.get(socket);
@@ -60,7 +39,7 @@ export const connectSocket = (token: string) => {
         socketInstance.disconnect();
     }
 
-    socketInstance = io(resolveSocketUrl(), {
+    socketInstance = io(API_ORIGIN, {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: Infinity,

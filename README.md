@@ -13,18 +13,26 @@
 - DB model changes: `server/prisma/schema.prisma`
 
 ## Run (Development)
+0. Configure server environment (`server/.env`):
+```env
+# Runtime (pooler) URL
+DATABASE_URL=postgresql://<user>:<password>@<endpoint>-pooler.<region>.aws.neon.tech/<db>?sslmode=require
+
+# Optional but recommended for migrations (direct endpoint, no -pooler)
+DIRECT_URL=postgresql://<user>:<password>@<endpoint>.<region>.aws.neon.tech/<db>?sslmode=require
+```
+
 1. Backend terminal:
 ```powershell
 cd server
 npm install
-npm run dev
+npm run dev 
 ```
 
 2. Frontend terminal:
 ```powershell
 cd client
 npm install
-np
 npm run start:clean
 ```
 
@@ -50,4 +58,3 @@ npm --prefix client run build
 ```powershell
 npx tsc -p server/tsconfig.json --noEmit
 ```
-i

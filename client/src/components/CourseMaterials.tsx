@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Card from './ui/Card';
 import Badge from './ui/Badge';
 import GenerateFromPDFModal from './GenerateFromPDFModal';
+import { API_ORIGIN } from '../config/runtime';
 
 interface CourseMaterialsProps {
     courseId: string;
@@ -98,8 +99,6 @@ const CourseMaterials = ({ courseId, isTeacher }: CourseMaterialsProps) => {
         uploadMutation.mutate({ file, title: file.name });
     };
 
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
     if (isLoading) {
         return (
             <Card variant="layered" className="mission-card-section">
@@ -182,7 +181,7 @@ const CourseMaterials = ({ courseId, isTeacher }: CourseMaterialsProps) => {
 
                             <div className="flex items-center gap-2">
                                 <a
-                                    href={`${apiUrl}/${material.fileUrl.replace(/\\/g, '/')}`}
+                                    href={`${API_ORIGIN}/${material.fileUrl.replace(/\\/g, '/')}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-muted hover:text-gray-700"
