@@ -5,10 +5,11 @@ WORKDIR /usr/src/app
 RUN apk add --no-cache g++ make
 
 COPY package*.json ./
+COPY prisma ./prisma/
+COPY prisma.config.ts ./
 
 RUN npm install
 
-COPY prisma ./prisma/
 RUN npx prisma generate
 
 COPY . .
